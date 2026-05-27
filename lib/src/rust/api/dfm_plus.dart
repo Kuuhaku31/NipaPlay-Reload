@@ -6,31 +6,78 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_next2_frame`, `calc_frame_cache_key`, `calc_layout_cache_key`, `calc_merged_font_size_multiplier`, `cmp_f64`, `compact_scroll_tracks`, `compact_static_tracks`, `frame_cache`, `from_plain`, `from_raw`, `get`, `insert`, `is_wide_char`, `lower_bound`, `measure_text_height`, `measure_text_width`, `merge_key`, `new`, `next2_layout_frame_with_cache`, `normalize_color`, `normalize_type_code`, `prepare_merged_items`, `resolve_base_track_height`, `sanitize_display_area`, `sanitize_positive`, `scroll_item_x_at_time`, `scroll_items_will_collide_in_duration`, `scroll_will_collide_with_any`, `select_scroll_track`, `select_static_track`, `simple_text_hash`, `static_items_will_collide`, `static_will_collide_with_any`, `tracks_vertical_overlap`, `upper_bound`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `FrameCacheEntry`, `FrameCache`, `RawNext2Item`, `WorkingNext2Item`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`
+// These functions are ignored because they are not marked as `pub`: `fnv1a_hash`, `lower_bound`, `resolve_outline_px`, `upper_bound`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
-Future<RustNext2PreparedLayout> next2PrepareLayout(
-        {required RustNext2PrepareRequest request}) =>
-    RustLib.instance.api.crateApiNext2Next2PrepareLayout(request: request);
+/// One-time layout preparation.
+/// Computes track assignments, collision avoidance, filtering, and merge.
+/// Ported from DanmakuFlameMaster's DrawTask + DanmakusRetainer pipeline.
+Future<DfmPlusPreparedLayout> dfmPlusPrepareLayout(
+        {required DfmPlusPrepareRequest request}) =>
+    RustLib.instance.api.crateApiDfmPlusDfmPlusPrepareLayout(request: request);
 
-Future<RustNext2FrameLayout> next2LayoutFrame(
-        {required RustNext2FrameRequest request}) =>
-    RustLib.instance.api.crateApiNext2Next2LayoutFrame(request: request);
+/// Per-frame layout query.
+/// Computes X positions for visible danmaku at the current time.
+/// Output format is compatible with Next2's FrameItemPayload.
+Future<DfmPlusFrameLayout> dfmPlusLayoutFrame(
+        {required DfmPlusFrameRequest request}) =>
+    RustLib.instance.api.crateApiDfmPlusDfmPlusLayoutFrame(request: request);
 
-class RustNext2DanmakuItem {
+/// Get font metrics for collision detection, matching the GPU renderer's computations exactly.
+/// `custom_font_bytes`: optional custom font file contents.
+Future<DfmPlusFontMetrics> dfmPlusFontMetrics(
+        {required double fontSize,
+        required double outlineWidth,
+        Uint8List? customFontBytes}) =>
+    RustLib.instance.api.crateApiDfmPlusDfmPlusFontMetrics(
+        fontSize: fontSize,
+        outlineWidth: outlineWidth,
+        customFontBytes: customFontBytes);
+
+/// Measure the rendered width of a single text string using the same font metrics
+/// as the GPU glyph atlas (glyph_hor_advance → scale_to_px → max fallback).
+///
+/// This ensures collision detection widths match rendering widths exactly.
+/// `custom_font_bytes`: optional custom font file contents (pass None to use default embedded font).
+Future<double> dfmPlusMeasureTextWidth(
+        {required String text,
+        required double fontSize,
+        Uint8List? customFontBytes}) =>
+    RustLib.instance.api.crateApiDfmPlusDfmPlusMeasureTextWidth(
+        text: text, fontSize: fontSize, customFontBytes: customFontBytes);
+
+/// Measure widths of multiple text strings in a single call (amortizes font loading).
+/// Returns a Vec of widths in the same order as the input texts.
+Future<Float64List> dfmPlusMeasureTextWidths(
+        {required List<String> texts,
+        required double fontSize,
+        Uint8List? customFontBytes}) =>
+    RustLib.instance.api.crateApiDfmPlusDfmPlusMeasureTextWidths(
+        texts: texts, fontSize: fontSize, customFontBytes: customFontBytes);
+
+/// Input danmaku item for layout preparation.
+class DfmPlusDanmakuItem {
   final double timeSeconds;
   final String text;
   final int typeCode;
   final int colorArgb;
   final bool isMe;
 
-  const RustNext2DanmakuItem({
+  /// Pre-measured paint width from the font measurer (glyph_hor_advance).
+  /// When set to a positive value, skips the Rust-side heuristic and uses this directly.
+  final double paintWidth;
+
+  /// Pre-measured paint height from the font measurer.
+  final double paintHeight;
+
+  const DfmPlusDanmakuItem({
     required this.timeSeconds,
     required this.text,
     required this.typeCode,
     required this.colorArgb,
     required this.isMe,
+    required this.paintWidth,
+    required this.paintHeight,
   });
 
   @override
@@ -39,21 +86,65 @@ class RustNext2DanmakuItem {
       text.hashCode ^
       typeCode.hashCode ^
       colorArgb.hashCode ^
-      isMe.hashCode;
+      isMe.hashCode ^
+      paintWidth.hashCode ^
+      paintHeight.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RustNext2DanmakuItem &&
+      other is DfmPlusDanmakuItem &&
           runtimeType == other.runtimeType &&
           timeSeconds == other.timeSeconds &&
           text == other.text &&
           typeCode == other.typeCode &&
           colorArgb == other.colorArgb &&
-          isMe == other.isMe;
+          isMe == other.isMe &&
+          paintWidth == other.paintWidth &&
+          paintHeight == other.paintHeight;
 }
 
-class RustNext2FrameItem {
+/// Font metrics matching the GPU renderer's layout parameters.
+class DfmPlusFontMetrics {
+  /// Line ascent matching GPU's `line_ascent()`: `max(px * 0.82, max_face_ascender)`.
+  final double ascent;
+
+  /// Line descent: max face descender (absolute value).
+  final double descent;
+
+  /// Total line height = ascent + descent.
+  final double lineHeight;
+
+  /// Effective outline width in pixels, matching GPU's `resolve_outline_px()`.
+  final double outlinePx;
+
+  const DfmPlusFontMetrics({
+    required this.ascent,
+    required this.descent,
+    required this.lineHeight,
+    required this.outlinePx,
+  });
+
+  @override
+  int get hashCode =>
+      ascent.hashCode ^
+      descent.hashCode ^
+      lineHeight.hashCode ^
+      outlinePx.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DfmPlusFontMetrics &&
+          runtimeType == other.runtimeType &&
+          ascent == other.ascent &&
+          descent == other.descent &&
+          lineHeight == other.lineHeight &&
+          outlinePx == other.outlinePx;
+}
+
+/// Single frame item with computed position.
+class DfmPlusFrameItem {
   final double timeSeconds;
   final String text;
   final int typeCode;
@@ -65,7 +156,7 @@ class RustNext2FrameItem {
   final double y;
   final double offstageX;
 
-  const RustNext2FrameItem({
+  const DfmPlusFrameItem({
     required this.timeSeconds,
     required this.text,
     required this.typeCode,
@@ -94,7 +185,7 @@ class RustNext2FrameItem {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RustNext2FrameItem &&
+      other is DfmPlusFrameItem &&
           runtimeType == other.runtimeType &&
           timeSeconds == other.timeSeconds &&
           text == other.text &&
@@ -108,10 +199,11 @@ class RustNext2FrameItem {
           offstageX == other.offstageX;
 }
 
-class RustNext2FrameLayout {
-  final List<RustNext2FrameItem> items;
+/// Per-frame layout result.
+class DfmPlusFrameLayout {
+  final List<DfmPlusFrameItem> items;
 
-  const RustNext2FrameLayout({
+  const DfmPlusFrameLayout({
     required this.items,
   });
 
@@ -121,16 +213,17 @@ class RustNext2FrameLayout {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RustNext2FrameLayout &&
+      other is DfmPlusFrameLayout &&
           runtimeType == other.runtimeType &&
           items == other.items;
 }
 
-class RustNext2FrameRequest {
-  final RustNext2PreparedLayout layout;
+/// Per-frame layout request.
+class DfmPlusFrameRequest {
+  final DfmPlusPreparedLayout layout;
   final double currentTimeSeconds;
 
-  const RustNext2FrameRequest({
+  const DfmPlusFrameRequest({
     required this.layout,
     required this.currentTimeSeconds,
   });
@@ -141,14 +234,15 @@ class RustNext2FrameRequest {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RustNext2FrameRequest &&
+      other is DfmPlusFrameRequest &&
           runtimeType == other.runtimeType &&
           layout == other.layout &&
           currentTimeSeconds == other.currentTimeSeconds;
 }
 
-class RustNext2PrepareRequest {
-  final List<RustNext2DanmakuItem> items;
+/// Layout preparation request.
+class DfmPlusPrepareRequest {
+  final List<DfmPlusDanmakuItem> items;
   final double width;
   final double height;
   final double fontSize;
@@ -156,10 +250,16 @@ class RustNext2PrepareRequest {
   final double scrollDurationSeconds;
   final bool allowStacking;
   final bool mergeDanmaku;
-  final String customFontFamily;
-  final String customFontFilePath;
+  final int? maxQuantity;
+  final int? maxLinesPerType;
 
-  const RustNext2PrepareRequest({
+  /// Gap ratio between tracks. 0.5 = 50% of item height as gap. Default: 0.5.
+  final double trackGapRatio;
+
+  /// Outline width in pixels, used to expand paint_width for accurate collision detection.
+  final double outlineWidth;
+
+  const DfmPlusPrepareRequest({
     required this.items,
     required this.width,
     required this.height,
@@ -168,8 +268,10 @@ class RustNext2PrepareRequest {
     required this.scrollDurationSeconds,
     required this.allowStacking,
     required this.mergeDanmaku,
-    required this.customFontFamily,
-    required this.customFontFilePath,
+    this.maxQuantity,
+    this.maxLinesPerType,
+    required this.trackGapRatio,
+    required this.outlineWidth,
   });
 
   @override
@@ -182,13 +284,15 @@ class RustNext2PrepareRequest {
       scrollDurationSeconds.hashCode ^
       allowStacking.hashCode ^
       mergeDanmaku.hashCode ^
-      customFontFamily.hashCode ^
-      customFontFilePath.hashCode;
+      maxQuantity.hashCode ^
+      maxLinesPerType.hashCode ^
+      trackGapRatio.hashCode ^
+      outlineWidth.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RustNext2PrepareRequest &&
+      other is DfmPlusPrepareRequest &&
           runtimeType == other.runtimeType &&
           items == other.items &&
           width == other.width &&
@@ -198,11 +302,14 @@ class RustNext2PrepareRequest {
           scrollDurationSeconds == other.scrollDurationSeconds &&
           allowStacking == other.allowStacking &&
           mergeDanmaku == other.mergeDanmaku &&
-          customFontFamily == other.customFontFamily &&
-          customFontFilePath == other.customFontFilePath;
+          maxQuantity == other.maxQuantity &&
+          maxLinesPerType == other.maxLinesPerType &&
+          trackGapRatio == other.trackGapRatio &&
+          outlineWidth == other.outlineWidth;
 }
 
-class RustNext2PreparedItem {
+/// Single prepared item with layout information.
+class DfmPlusPreparedItem {
   final double timeSeconds;
   final String text;
   final int typeCode;
@@ -214,8 +321,10 @@ class RustNext2PreparedItem {
   final double yPosition;
   final double width;
   final double scrollSpeed;
+  final bool isFiltered;
+  final double durationSeconds;
 
-  const RustNext2PreparedItem({
+  const DfmPlusPreparedItem({
     required this.timeSeconds,
     required this.text,
     required this.typeCode,
@@ -227,6 +336,8 @@ class RustNext2PreparedItem {
     required this.yPosition,
     required this.width,
     required this.scrollSpeed,
+    required this.isFiltered,
+    required this.durationSeconds,
   });
 
   @override
@@ -241,12 +352,14 @@ class RustNext2PreparedItem {
       trackIndex.hashCode ^
       yPosition.hashCode ^
       width.hashCode ^
-      scrollSpeed.hashCode;
+      scrollSpeed.hashCode ^
+      isFiltered.hashCode ^
+      durationSeconds.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RustNext2PreparedItem &&
+      other is DfmPlusPreparedItem &&
           runtimeType == other.runtimeType &&
           timeSeconds == other.timeSeconds &&
           text == other.text &&
@@ -258,20 +371,23 @@ class RustNext2PreparedItem {
           trackIndex == other.trackIndex &&
           yPosition == other.yPosition &&
           width == other.width &&
-          scrollSpeed == other.scrollSpeed;
+          scrollSpeed == other.scrollSpeed &&
+          isFiltered == other.isFiltered &&
+          durationSeconds == other.durationSeconds;
 }
 
-class RustNext2PreparedLayout {
+/// Prepared layout result.
+class DfmPlusPreparedLayout {
   final double width;
   final double height;
   final double scrollDurationSeconds;
   final double staticDurationSeconds;
-  final List<RustNext2PreparedItem> items;
+  final List<DfmPlusPreparedItem> items;
   final Float64List itemTimes;
   final int trackCount;
   final BigInt cacheKey;
 
-  const RustNext2PreparedLayout({
+  const DfmPlusPreparedLayout({
     required this.width,
     required this.height,
     required this.scrollDurationSeconds,
@@ -296,7 +412,7 @@ class RustNext2PreparedLayout {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is RustNext2PreparedLayout &&
+      other is DfmPlusPreparedLayout &&
           runtimeType == other.runtimeType &&
           width == other.width &&
           height == other.height &&
