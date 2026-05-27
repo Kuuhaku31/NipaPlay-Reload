@@ -6,11 +6,14 @@ import 'package:nipaplay/plugins/models/plugin_descriptor.dart';
 import 'package:nipaplay/plugins/models/plugin_ui_action_result.dart';
 import 'package:nipaplay/plugins/models/plugin_ui_entry.dart';
 import 'package:nipaplay/plugins/plugin_service.dart';
+import 'package:nipaplay/themes/nipaplay/widgets/blur_dialog.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/blur_snackbar.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/fluent_settings_switch.dart';
+import 'package:nipaplay/themes/nipaplay/widgets/hover_scale_text_button.dart';
 import 'package:http/http.dart' as http;
 import 'package:nipaplay/themes/nipaplay/widgets/glass_bottom_sheet.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/plugin_market_dialog.dart';
+import 'package:nipaplay/themes/nipaplay/widgets/settings_item.dart';
 import 'package:provider/provider.dart';
 import 'package:nipaplay/utils/app_accent_color.dart';
 import 'package:nipaplay/providers/settings_provider.dart';
@@ -165,31 +168,26 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
     PluginDescriptor plugin,
     PluginService pluginService,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final colorScheme = Theme.of(context).colorScheme;
+    final confirmed = await BlurDialog.show<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(
-          context.l10n.localeName.startsWith('zh_Hant') ? '確認刪除' : '确认删除',
+      title: context.l10n.localeName.startsWith('zh_Hant') ? '確認刪除' : '确认删除',
+      content: context.l10n.localeName.startsWith('zh_Hant')
+          ? '確定要刪除插件「${plugin.manifest.name}」嗎？此操作不可撤銷。'
+          : '确定要删除插件「${plugin.manifest.name}」吗？此操作不可撤销。',
+      actions: [
+        HoverScaleTextButton(
+          text: context.l10n.cancel,
+          idleColor: colorScheme.onSurface.withOpacity(0.7),
+          onPressed: () => Navigator.of(context).pop(false),
         ),
-        content: Text(
-          context.l10n.localeName.startsWith('zh_Hant')
-              ? '確定要刪除插件「${plugin.manifest.name}」嗎？此操作不可撤銷。'
-              : '确定要删除插件「${plugin.manifest.name}」吗？此操作不可撤销。',
+        HoverScaleTextButton(
+          text: context.l10n.localeName.startsWith('zh_Hant') ? '刪除' : '删除',
+          idleColor: Colors.redAccent,
+          hoverColor: Colors.redAccent,
+          onPressed: () => Navigator.of(context).pop(true),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(context.l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(
-              context.l10n.localeName.startsWith('zh_Hant') ? '刪除' : '删除',
-              style: const TextStyle(color: Colors.redAccent),
-            ),
-          ),
-        ],
-      ),
+      ],
     );
 
     if (confirmed != true || !context.mounted) return;
@@ -258,6 +256,16 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
       return '選擇要打開的插件功能';
     }
     return '选择要打开的插件功能';
+  }
+
+  IconData _pluginUiEntryIcon(PluginUiEntry entry) {
+    if (entry.isSwitch) {
+      return Ionicons.toggle_outline;
+    }
+    if (entry.isTextInput) {
+      return Ionicons.create_outline;
+    }
+    return Ionicons.chevron_forward_outline;
   }
 
   String _importPluginButtonText(BuildContext context) {
@@ -424,11 +432,11 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
           itemCount: entries.length,
           itemBuilder: (itemContext, index) {
             final entry = entries[index];
-            return ListTile(
-              title: Text(entry.title),
-              subtitle:
-                  entry.description == null ? null : Text(entry.description!),
-              trailing: const Icon(Icons.chevron_right),
+            return SettingsItem.button(
+              title: entry.title,
+              subtitle: entry.description,
+              icon: _pluginUiEntryIcon(entry),
+              trailingIcon: Ionicons.chevron_forward_outline,
               onTap: () => Navigator.of(itemContext).pop(entry),
             );
           },
@@ -459,21 +467,18 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
               if (entry.isSwitch) {
                 final switchValue = pluginService.getSwitchSettingValue(
                     updatedPlugin.manifest.id, entry.id);
-                return ListTile(
-                  title: Text(entry.title),
-                  subtitle: entry.description == null
-                      ? null
-                      : Text(entry.description!),
-                  trailing: FluentSettingsSwitch(
-                    value: switchValue,
-                    onChanged: (_) async {
-                      await pluginService.setSwitchSettingValue(
-                          updatedPlugin.manifest.id, entry.id, !switchValue);
-                      await _invokePluginAction(
-                          sheetContext, updatedPlugin, entry,
-                          showResult: false);
-                    },
-                  ),
+                return SettingsItem.toggle(
+                  title: entry.title,
+                  subtitle: entry.description,
+                  icon: _pluginUiEntryIcon(entry),
+                  value: switchValue,
+                  onChanged: (_) async {
+                    await pluginService.setSwitchSettingValue(
+                        updatedPlugin.manifest.id, entry.id, !switchValue);
+                    await _invokePluginAction(
+                        sheetContext, updatedPlugin, entry,
+                        showResult: false);
+                  },
                 );
               }
               if (entry.isTextInput) {
@@ -520,11 +525,11 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
                   ),
                 );
               }
-              return ListTile(
-                title: Text(entry.title),
-                subtitle:
-                    entry.description == null ? null : Text(entry.description!),
-                trailing: const Icon(Icons.chevron_right),
+              return SettingsItem.button(
+                title: entry.title,
+                subtitle: entry.description,
+                icon: _pluginUiEntryIcon(entry),
+                trailingIcon: Ionicons.chevron_forward_outline,
                 onTap: () async {
                   Navigator.of(itemContext).pop();
                   if (!context.mounted) return;
@@ -550,22 +555,24 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
+                    HoverScaleTextButton(
+                      text: context.l10n.localeName.startsWith('zh_Hant')
+                          ? '關閉'
+                          : '关闭',
+                      idleColor: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.7),
                       onPressed: () => Navigator.of(sheetContext).pop(),
-                      child: Text(
-                        context.l10n.localeName.startsWith('zh_Hant')
-                            ? '關閉'
-                            : '关闭',
-                      ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
+                    HoverScaleTextButton(
+                      text: context.l10n.localeName.startsWith('zh_Hant')
+                          ? '儲存並關閉'
+                          : '保存并关闭',
+                      idleColor: Theme.of(context).colorScheme.onSurface,
+                      hoverColor: AppAccentColors.current,
                       onPressed: () => Navigator.of(sheetContext).pop(),
-                      child: Text(
-                        context.l10n.localeName.startsWith('zh_Hant')
-                            ? '儲存並關閉'
-                            : '保存并关闭',
-                      ),
                     ),
                   ],
                 ),
@@ -639,20 +646,45 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!plugin.isBuiltin)
-          _HoverScaleIconButton(
-            tooltip: _pluginDeleteTooltip(context),
-            icon: Icons.delete_outline,
+          HoverScaleTextButton(
             onPressed: () =>
                 _confirmDeletePlugin(context, plugin, pluginService),
+            idleColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+            hoverColor: Colors.redAccent,
+            hoverScale: 1.08,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            textStyle: const TextStyle(fontSize: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.delete_outline, size: 18),
+                const SizedBox(width: 4),
+                Text(_pluginDeleteTooltip(context)),
+              ],
+            ),
           ),
-        _HoverScaleIconButton(
-          tooltip: actionEnabled
-              ? _pluginActionTitle(context, plugin)
-              : _pluginActionNotAvailable(context),
-          icon: Icons.handyman,
+        const SizedBox(width: 6),
+        HoverScaleTextButton(
           onPressed: actionEnabled
               ? () => _showPluginActionPicker(context, plugin)
               : null,
+          idleColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+          hoverColor: AppAccentColors.current,
+          hoverScale: 1.08,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          textStyle: const TextStyle(fontSize: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.handyman, size: 18),
+              const SizedBox(width: 4),
+              Text(
+                actionEnabled
+                    ? _pluginActionTitle(context, plugin)
+                    : _pluginActionNotAvailable(context),
+              ),
+            ],
+          ),
         ),
         FluentSettingsSwitch(
           value: plugin.enabled,
@@ -706,16 +738,38 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                 child: Row(
                   children: [
-                    _HoverScaleTextAction(
-                      icon: Ionicons.cloud_upload_outline,
-                      text: _importPluginButtonText(context),
+                    HoverScaleTextButton(
                       onPressed: () => _importPlugin(context, pluginService),
+                      idleColor: colorScheme.onSurface.withOpacity(0.78),
+                      hoverColor: AppAccentColors.current,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 6),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Ionicons.cloud_upload_outline, size: 20),
+                          const SizedBox(width: 8),
+                          Text(_importPluginButtonText(context)),
+                        ],
+                      ),
                     ),
                     const SizedBox(width: 16),
-                    _HoverScaleTextAction(
-                      icon: Ionicons.storefront_outline,
-                      text: _pluginMarketButtonText(context),
+                    HoverScaleTextButton(
                       onPressed: () => _openPluginMarket(context),
+                      idleColor: colorScheme.onSurface.withOpacity(0.78),
+                      hoverColor: AppAccentColors.current,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 6),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Ionicons.storefront_outline, size: 20),
+                          const SizedBox(width: 8),
+                          Text(_pluginMarketButtonText(context)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -771,26 +825,35 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        OutlinedButton.icon(
+                        HoverScaleTextButton(
                           onPressed: _isProxySaving ? null : _applyProxyUrl,
-                          icon: _isProxySaving
-                              ? const SizedBox(
+                          idleColor: colorScheme.onSurface.withOpacity(0.78),
+                          hoverColor: AppAccentColors.current,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          textStyle:
+                              const TextStyle(fontWeight: FontWeight.w600),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_isProxySaving)
+                                const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : const Icon(Icons.check, size: 18),
-                          label: Text(
-                            context.l10n.localeName.startsWith('zh_Hant')
-                                ? '儲存'
-                                : '保存',
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppAccentColors.current,
-                            side: BorderSide(color: AppAccentColors.current),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 12),
+                              else
+                                const Icon(Icons.check, size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                context.l10n.localeName.startsWith('zh_Hant')
+                                    ? '儲存'
+                                    : '保存',
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -822,31 +885,12 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
               pluginService.getAvailableUpdateVersion(plugin.manifest.id);
 
           items.add(
-            ListTile(
-              leading: Icon(
-                Ionicons.extension_puzzle_outline,
-                color: colorScheme.onSurface.withValues(alpha: 0.7),
-              ),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      plugin.manifest.name,
-                      style: TextStyle(
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  if (updateVersion != null) _buildUpdateBadge(updateVersion),
-                ],
-              ),
-              subtitle: Text(
-                _pluginSubtitle(context, plugin),
-                style: TextStyle(
-                  color: colorScheme.onSurface.withValues(alpha: 0.7),
-                ),
-              ),
+            _PluginSettingsItem(
+              plugin: plugin,
+              subtitle: _pluginSubtitle(context, plugin),
+              updateBadge: updateVersion != null
+                  ? _buildUpdateBadge(updateVersion)
+                  : null,
               trailing: _buildPluginToggleTrailing(
                 context,
                 plugin,
@@ -883,16 +927,38 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               child: Row(
                 children: [
-                  _HoverScaleTextAction(
-                    icon: Ionicons.cloud_upload_outline,
-                    text: _importPluginButtonText(context),
+                  HoverScaleTextButton(
                     onPressed: () => _importPlugin(context, pluginService),
+                    idleColor: colorScheme.onSurface.withOpacity(0.78),
+                    hoverColor: AppAccentColors.current,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Ionicons.cloud_upload_outline, size: 20),
+                        const SizedBox(width: 8),
+                        Text(_importPluginButtonText(context)),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 16),
-                  _HoverScaleTextAction(
-                    icon: Ionicons.storefront_outline,
-                    text: _pluginMarketButtonText(context),
+                  HoverScaleTextButton(
                     onPressed: () => _openPluginMarket(context),
+                    idleColor: colorScheme.onSurface.withOpacity(0.78),
+                    hoverColor: AppAccentColors.current,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Ionicons.storefront_outline, size: 20),
+                        const SizedBox(width: 8),
+                        Text(_pluginMarketButtonText(context)),
+                      ],
+                    ),
                   ),
                   if (_isCheckingUpdates)
                     const SizedBox(width: 8)
@@ -959,26 +1025,34 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      OutlinedButton.icon(
+                      HoverScaleTextButton(
                         onPressed: _isProxySaving ? null : _applyProxyUrl,
-                        icon: _isProxySaving
-                            ? const SizedBox(
+                        idleColor: colorScheme.onSurface.withOpacity(0.78),
+                        hoverColor: AppAccentColors.current,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isProxySaving)
+                              const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(Icons.check, size: 18),
-                        label: Text(
-                          context.l10n.localeName.startsWith('zh_Hant')
-                              ? '儲存'
-                              : '保存',
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppAccentColors.current,
-                          side: BorderSide(color: AppAccentColors.current),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
+                            else
+                              const Icon(Icons.check, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              context.l10n.localeName.startsWith('zh_Hant')
+                                  ? '儲存'
+                                  : '保存',
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -998,122 +1072,76 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
   }
 }
 
-class _HoverScaleTextAction extends StatefulWidget {
-  const _HoverScaleTextAction({
-    required this.text,
-    required this.onPressed,
-    this.icon,
+class _PluginSettingsItem extends StatelessWidget {
+  const _PluginSettingsItem({
+    required this.plugin,
+    required this.subtitle,
+    required this.trailing,
+    required this.onTap,
+    this.updateBadge,
   });
 
-  final String text;
-  final VoidCallback onPressed;
-  final IconData? icon;
-
-  @override
-  State<_HoverScaleTextAction> createState() => _HoverScaleTextActionState();
-}
-
-class _HoverScaleTextActionState extends State<_HoverScaleTextAction> {
-  static Color get _nipaAccentColor => AppAccentColors.current;
-
-  bool _isHovered = false;
+  final PluginDescriptor plugin;
+  final String subtitle;
+  final Widget trailing;
+  final VoidCallback onTap;
+  final Widget? updateBadge;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final textColor = _isHovered
-        ? _nipaAccentColor
-        : colorScheme.onSurface.withValues(alpha: 0.78);
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onPressed,
-        child: AnimatedScale(
-          scale: _isHovered ? 1.08 : 1.0,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutBack,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.icon != null)
-                  Icon(widget.icon, color: textColor, size: 20),
-                if (widget.icon != null) const SizedBox(width: 8),
-                Text(
-                  widget.text,
-                  style: TextStyle(
-                    color: textColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+    return InkWell(
+      splashFactory: NoSplash.splashFactory,
+      overlayColor: WidgetStateProperty.all(Colors.transparent),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(
+              Ionicons.extension_puzzle_outline,
+              color: colorScheme.onSurface.withOpacity(0.7),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HoverScaleIconButton extends StatefulWidget {
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback? onPressed;
-
-  const _HoverScaleIconButton({
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  @override
-  State<_HoverScaleIconButton> createState() => _HoverScaleIconButtonState();
-}
-
-class _HoverScaleIconButtonState extends State<_HoverScaleIconButton> {
-  static Color get _nipaAccentColor => AppAccentColors.current;
-
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final isEnabled = widget.onPressed != null;
-    final colorScheme = Theme.of(context).colorScheme;
-    final iconColor = !isEnabled
-        ? colorScheme.onSurface.withValues(alpha: 0.35)
-        : (_isHovered
-            ? _nipaAccentColor
-            : colorScheme.onSurface.withValues(alpha: 0.7));
-
-    return Tooltip(
-      message: widget.tooltip,
-      child: Semantics(
-        button: true,
-        enabled: isEnabled,
-        label: widget.tooltip,
-        child: MouseRegion(
-          onEnter: (_) => isEnabled ? setState(() => _isHovered = true) : null,
-          onExit: (_) => isEnabled ? setState(() => _isHovered = false) : null,
-          cursor:
-              isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onPressed,
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: AnimatedScale(
-                scale: _isHovered && isEnabled ? 1.1 : 1.0,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutBack,
-                child: Icon(widget.icon, size: 20, color: iconColor),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          plugin.manifest.name,
+                          locale: const Locale("zh-Hans", "zh"),
+                          style: TextStyle(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          locale: const Locale("zh-Hans", "zh"),
+                          style: TextStyle(
+                            color: colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (updateBadge != null) ...[
+                    const SizedBox(width: 8),
+                    updateBadge!,
+                  ],
+                ],
               ),
             ),
-          ),
+            const SizedBox(width: 12),
+            trailing,
+          ],
         ),
       ),
     );

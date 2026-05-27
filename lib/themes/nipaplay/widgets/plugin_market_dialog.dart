@@ -7,6 +7,7 @@ import 'package:nipaplay/providers/appearance_settings_provider.dart';
 import 'package:nipaplay/providers/settings_provider.dart';
 import 'package:nipaplay/plugins/plugin_service.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/blur_snackbar.dart';
+import 'package:nipaplay/themes/nipaplay/widgets/hover_scale_text_button.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/nipaplay_window.dart';
 import 'package:nipaplay/utils/app_accent_color.dart';
 import 'package:nipaplay/widgets/adaptive_markdown.dart';
@@ -55,7 +56,8 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  Future<String> _applyProxyIfNeeded(String rawUrl, String proxyUrl, String? proxy) async {
+  Future<String> _applyProxyIfNeeded(
+      String rawUrl, String proxyUrl, String? proxy) async {
     if (proxy == null || proxy.trim().isEmpty) {
       return await GithubAccelResolver.resolveFirstReachable(rawUrl) ?? rawUrl;
     }
@@ -191,8 +193,7 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
   }
 
   void _syncInstalledStatus() {
-    final pluginService =
-        Provider.of<PluginService>(context, listen: false);
+    final pluginService = Provider.of<PluginService>(context, listen: false);
     final index = pluginService.pluginIndex;
 
     // 构建 remoteId → (localId, version) 的映射，支持前缀匹配
@@ -229,8 +230,10 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
         Provider.of<SettingsProvider>(context, listen: false);
     final proxyUrl = settingsProvider.githubProxyUrl;
     final rawReadmeUrl = '$_readmeBaseUrl/${plugin.id}/README.md';
-    final proxyReadmeUrl = '${_repoBaseUrlForProxy}/plugins/${plugin.id}/README.md';
-    final url = await _applyProxyIfNeeded(rawReadmeUrl, proxyReadmeUrl, proxyUrl);
+    final proxyReadmeUrl =
+        '${_repoBaseUrlForProxy}/plugins/${plugin.id}/README.md';
+    final url =
+        await _applyProxyIfNeeded(rawReadmeUrl, proxyReadmeUrl, proxyUrl);
 
     try {
       final response = await http.get(Uri.parse(url));
@@ -295,8 +298,7 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
         plugin.isInstalled = true;
         plugin.localVersion = plugin.version;
         plugin.localId = plugin.id;
-        BlurSnackBar.show(
-            context, wasInstalled ? '插件更新成功' : '插件安装成功');
+        BlurSnackBar.show(context, wasInstalled ? '插件更新成功' : '插件安装成功');
       } else {
         BlurSnackBar.show(context, '下载插件失败: ${response.statusCode}');
       }
@@ -307,6 +309,56 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
         plugin.isInstalling = false;
       });
     }
+  }
+
+  Widget _buildTextActionButton({
+    required String text,
+    required VoidCallback? onPressed,
+    IconData? icon,
+    Color? idleColor,
+    Color? hoverColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return HoverScaleTextButton(
+      onPressed: onPressed,
+      idleColor: idleColor ?? colorScheme.onSurface.withValues(alpha: 0.78),
+      hoverColor: hoverColor ?? _accentColor,
+      hoverScale: 1.08,
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16),
+            const SizedBox(width: 6),
+          ],
+          Text(text),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIconActionButton({
+    required IconData icon,
+    required VoidCallback? onPressed,
+    String? tooltip,
+  }) {
+    final button = HoverScaleTextButton(
+      onPressed: onPressed,
+      idleColor:
+          Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.78),
+      hoverColor: _accentColor,
+      hoverScale: 1.08,
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.all(6),
+      child: Icon(icon, size: 20),
+    );
+    if (tooltip == null || tooltip.isEmpty) {
+      return button;
+    }
+    return Tooltip(message: tooltip, child: button);
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -342,13 +394,17 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
                 ],
               ),
               const Spacer(),
-              IconButton(
-                icon: _isRefreshing
-                    ? const CircularProgressIndicator(strokeWidth: 2)
-                    : Icon(Ionicons.refresh_outline),
-                onPressed: _loadPlugins,
-                tooltip: '刷新',
-              ),
+              _isRefreshing
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : _buildIconActionButton(
+                      icon: Ionicons.refresh_outline,
+                      onPressed: _loadPlugins,
+                      tooltip: '刷新',
+                    ),
             ],
           ),
           const SizedBox(height: 16),
@@ -403,9 +459,10 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
+            _buildTextActionButton(
+              text: '重新加载',
+              icon: Ionicons.refresh_outline,
               onPressed: _loadPlugins,
-              child: const Text('重新加载'),
             ),
           ],
         ),
@@ -602,10 +659,10 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
             const SizedBox(height: 12),
             Row(
               children: [
-                TextButton.icon(
+                _buildTextActionButton(
+                  text: '查看文档',
                   onPressed: () => _showPluginReadme(plugin),
-                  icon: Icon(Ionicons.document_outline, size: 16),
-                  label: const Text('查看文档'),
+                  icon: Ionicons.document_outline,
                 ),
                 const Spacer(),
                 _buildActionButtons(plugin),
@@ -632,53 +689,39 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
       final hasUpdate = plugin.localVersion != null &&
           _compareVersions(plugin.version, plugin.localVersion!) > 0;
       if (hasUpdate) {
-        return ElevatedButton(
+        return _buildTextActionButton(
+          text: '更新',
           onPressed: () => _installPlugin(plugin),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _accentColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: const Text('更新'),
+          icon: Ionicons.download_outline,
+          idleColor: _accentColor,
+          hoverColor: _accentColor,
         );
       }
-      return TextButton(
+      return _buildTextActionButton(
+        text: '已安装',
         onPressed: () {
           BlurSnackBar.show(context, '该插件已安装');
         },
-        child: const Text('已安装'),
+        icon: Ionicons.checkmark_circle_outline,
       );
     }
 
     if (!isVersionCompatible) {
-      return ElevatedButton(
+      return _buildTextActionButton(
+        text: '版本不兼容',
         onPressed: null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.grey[600],
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        child: const Text('版本不兼容'),
+        icon: Ionicons.warning_outline,
+        idleColor: Colors.grey,
+        hoverColor: Colors.grey,
       );
     }
 
-    return ElevatedButton(
+    return _buildTextActionButton(
+      text: '安装',
       onPressed: () => _installPlugin(plugin),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: _accentColor,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
-      child: const Text('安装'),
+      icon: Ionicons.download_outline,
+      idleColor: _accentColor,
+      hoverColor: _accentColor,
     );
   }
 
@@ -691,9 +734,10 @@ class _PluginMarketDialogState extends State<PluginMarketDialog> {
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
           child: Row(
             children: [
-              IconButton(
-                icon: Icon(Ionicons.chevron_back_outline),
+              _buildIconActionButton(
+                icon: Ionicons.chevron_back_outline,
                 onPressed: _closeReadme,
+                tooltip: '返回',
               ),
               const SizedBox(width: 12),
               Expanded(
