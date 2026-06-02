@@ -292,6 +292,8 @@ class _CupertinoPlayerSettingsPageState
         return 'Video Player';
       case PlayerKernelType.mediaKit:
         return 'Libmpv';
+      case PlayerKernelType.kuroko:
+        return 'Kuroko';
     }
   }
 
@@ -303,6 +305,8 @@ class _CupertinoPlayerSettingsPageState
         return context.l10n.playerKernelDescriptionVideoPlayer;
       case PlayerKernelType.mediaKit:
         return context.l10n.playerKernelDescriptionLibmpv;
+      case PlayerKernelType.kuroko:
+        return 'Kuroko Rust 播放器（实验性）：macOS 原生 Metal 输出，播放、渲染和音频由 Rust 内核负责。';
     }
   }
 
@@ -394,6 +398,11 @@ class _CupertinoPlayerSettingsPageState
 
   List<AdaptivePopupMenuEntry> _kernelMenuItems() {
     return PlayerKernelType.values
+        .where(
+          (kernel) =>
+              kernel != PlayerKernelType.kuroko ||
+              (!kIsWeb && Platform.isMacOS),
+        )
         .map(
           (kernel) => AdaptivePopupMenuItem<PlayerKernelType>(
             label: _kernelDisplayName(kernel),

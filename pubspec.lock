@@ -714,6 +714,13 @@ packages:
       relative: true
     source: path
     version: "1.1.0"
+  kuroko_flutter:
+    dependency: "direct main"
+    description:
+      path: "third_party/kuroko/packages/kuroko_flutter"
+      relative: true
+    source: path
+    version: "0.0.1"
   leak_tracker:
     dependency: transitive
     description:

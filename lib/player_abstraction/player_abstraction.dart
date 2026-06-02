@@ -6,7 +6,10 @@ export './abstract_player.dart'
 export './player_factory.dart'
     show PlayerKernelType; // Export PlayerKernelType enum
 
+import 'dart:ui' show Rect;
+
 import 'package:flutter/foundation.dart'; // For ValueListenable, used in AbstractPlayer
+import 'package:flutter/widgets.dart' show Widget;
 import 'package:video_player/video_player.dart';
 import './abstract_player.dart'
     as core_player; // Alias for the true AbstractPlayer
@@ -16,6 +19,7 @@ import './player_factory.dart'; // Import PlayerFactory directly
 import './mdk_player_adapter.dart'; // 导入具体适配器类
 import './video_player_adapter.dart'; // 导入具体适配器类
 import './media_kit_player_adapter.dart'; // 导入MediaKit适配器类
+import './kuroko_player_adapter.dart';
 
 /// MDK-compatible PlaybackState.
 /// Code using the abstraction layer can use `PlaybackState.paused`.
@@ -237,6 +241,30 @@ class Player {
     }
   }
 
+  Widget? buildPlatformVideoSurface({
+    String? debugLabel,
+    ValueChanged<int?>? onPlatformViewIdChanged,
+    ValueChanged<Rect?>? onFrameRectChanged,
+  }) {
+    try {
+      final dyn = _delegate as dynamic;
+      final surface = dyn.buildPlatformVideoSurface(
+        debugLabel: debugLabel,
+        onPlatformViewIdChanged: onPlatformViewIdChanged,
+        onFrameRectChanged: onFrameRectChanged,
+      );
+      if (surface is Widget) {
+        return surface;
+      }
+      return null;
+    } on NoSuchMethodError {
+      return null;
+    } catch (error) {
+      debugPrint('[Player] buildPlatformVideoSurface failed: $error');
+      rethrow;
+    }
+  }
+
   // 获取当前使用的播放器内核类型的名称
   String getPlayerKernelName() {
     if (_delegate is MdkPlayerAdapter) {
@@ -245,6 +273,8 @@ class Player {
       return "Video Player";
     } else if (_delegate is MediaKitPlayerAdapter) {
       return "Media Kit";
+    } else if (_delegate is KurokoPlayerAdapter) {
+      return "Kuroko";
     } else {
       return "未知";
     }

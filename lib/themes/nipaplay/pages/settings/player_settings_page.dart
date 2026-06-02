@@ -142,6 +142,9 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       case PlayerKernelType.mediaKit:
         _playerCoreName = "Libmpv";
         break;
+      case PlayerKernelType.kuroko:
+        _playerCoreName = "Kuroko";
+        break;
       default:
         _playerCoreName = "MDK";
     }
@@ -419,6 +422,8 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
         return 'Video Player 官方播放器\n适用于简单视频播放，兼容性良好';
       case PlayerKernelType.mediaKit:
         return 'MediaKit (Libmpv) 播放器\n基于MPV，功能强大，支持硬件解码，支持复杂媒体格式';
+      case PlayerKernelType.kuroko:
+        return 'Kuroko Rust 播放器（实验性）\nmacOS 原生 Metal 输出，播放、渲染和音频由 Rust 内核负责';
     }
   }
 
@@ -523,6 +528,14 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 description:
                     _getPlayerKernelDescription(PlayerKernelType.mediaKit),
               ),
+              if (!kIsWeb && Platform.isMacOS)
+                DropdownMenuItemData(
+                  title: "Kuroko",
+                  value: PlayerKernelType.kuroko,
+                  isSelected: _selectedKernelType == PlayerKernelType.kuroko,
+                  description:
+                      _getPlayerKernelDescription(PlayerKernelType.kuroko),
+                ),
             ],
             onChanged: (kernelType) {
               _savePlayerKernelSettings(kernelType);

@@ -151,6 +151,9 @@ class PlayerKernelManager {
       return ['FVP', 'Media Kit', 'Video Player'];
     } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       // 桌面平台支持所有内核
+      if (Platform.isMacOS) {
+        kernels.add('Kuroko');
+      }
       return kernels;
     }
 
@@ -179,6 +182,9 @@ class PlayerKernelManager {
         break;
       case 'Video Player':
         kernelType = PlayerKernelType.videoPlayer;
+        break;
+      case 'Kuroko':
+        kernelType = PlayerKernelType.kuroko;
         break;
       default:
         kernelType = PlayerKernelType.mdk;
@@ -255,6 +261,9 @@ class PlayerKernelManager {
         break;
       case PlayerKernelType.videoPlayer:
         playerKernelName = 'Video Player';
+        break;
+      case PlayerKernelType.kuroko:
+        playerKernelName = 'Kuroko';
         break;
       default:
         playerKernelName = 'Unknown';

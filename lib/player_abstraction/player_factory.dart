@@ -5,6 +5,7 @@ import './abstract_player.dart';
 import './mdk_player_adapter.dart';
 import './video_player_adapter.dart'; // 导入新的适配器
 import './media_kit_player_adapter.dart'; // 导入新的MediaKit适配器
+import './kuroko_player_adapter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'; // 用于 debugPrint
 import 'package:nipaplay/utils/system_resource_monitor.dart'; // 导入系统资源监控器
@@ -16,6 +17,7 @@ enum PlayerKernelType {
   mdk,
   videoPlayer, // 添加 video_player 内核类型
   mediaKit, // 添加 media_kit 内核类型
+  kuroko,
   // otherPlayer,
 }
 
@@ -232,6 +234,9 @@ class PlayerFactory {
           bufferSize: getPrecacheBufferSizeBytes(),
           androidAudioOutput: getAndroidAudioOutput(),
         );
+      case PlayerKernelType.kuroko:
+        debugPrint('[PlayerFactory] 创建 Kuroko 播放器');
+        return KurokoPlayerAdapter();
       // case PlayerKernelType.otherPlayer:
       //   // return OtherPlayerAdapter(ThirdPartyPlayerApi());
       //   throw UnimplementedError('Other player types not yet supported.');
@@ -268,6 +273,9 @@ class PlayerFactory {
           break;
         case PlayerKernelType.mediaKit:
           kernelTypeName = "Libmpv";
+          break;
+        case PlayerKernelType.kuroko:
+          kernelTypeName = "Kuroko";
           break;
         default:
           kernelTypeName = "未知";
