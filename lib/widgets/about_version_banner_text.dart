@@ -39,7 +39,7 @@ class AboutVersionBannerText extends StatelessWidget {
         children: [
           const TextSpan(text: _productName),
           TextSpan(
-            text: ' $detailText',
+            text: '\n$detailText',
             style: style.copyWith(
               fontSize: baseFontSize * 0.58,
               fontWeight: FontWeight.w600,
@@ -47,7 +47,7 @@ class AboutVersionBannerText extends StatelessWidget {
           ),
         ],
       ),
-      textAlign: textAlign,
+      textAlign: TextAlign.start,
     );
   }
 
