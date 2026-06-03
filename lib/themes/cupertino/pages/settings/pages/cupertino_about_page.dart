@@ -527,7 +527,7 @@ class _CupertinoAboutPageState extends State<CupertinoAboutPage> {
           ),
           const SizedBox(height: 12),
           CupertinoButton.filled(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            padding: const EdgeInsets.fromLTRB(0, 10, 18, 10),
             onPressed: _isCheckingUpdate ? null : _manualCheckForUpdates,
             child: _isCheckingUpdate
                 ? Row(

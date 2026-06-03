@@ -418,8 +418,7 @@ class _AboutPageState extends State<AboutPage> {
                         splashColor: Colors.transparent,
                         highlightColor: Colors.transparent,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.fromLTRB(0, 10, 16, 10),
                           child: AnimatedScale(
                             scale: showUpdateButtonHover ? 1.1 : 1.0,
                             alignment: Alignment.centerLeft,
