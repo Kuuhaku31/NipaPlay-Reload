@@ -11,6 +11,8 @@ import 'package:nipaplay/themes/nipaplay/widgets/hover_scale_text_button.dart';
 import 'package:nipaplay/services/update_service.dart';
 import 'package:nipaplay/widgets/adaptive_markdown.dart';
 import 'package:nipaplay/utils/app_accent_color.dart';
+import 'package:nipaplay/utils/build_target_label.dart';
+import 'package:nipaplay/widgets/about_version_banner_text.dart';
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -20,6 +22,7 @@ class AboutPage extends StatefulWidget {
 }
 
 class _AboutPageState extends State<AboutPage> {
+  late final String _buildTargetLabel = getBuildTargetLabel();
   String _version = '';
   bool _versionLoadFailed = false;
   UpdateInfo? _updateInfo;
@@ -355,12 +358,18 @@ class _AboutPageState extends State<AboutPage> {
                     cursor: _updateInfo?.hasUpdate == true
                         ? SystemMouseCursors.click
                         : SystemMouseCursors.basic,
-                    child: Text(
-                      l10n.aboutVersionBanner(_displayVersionText(context)),
+                    child: AboutVersionBannerText(
+                      text:
+                          l10n.aboutVersionBanner(_displayVersionText(context)),
+                      targetLabel: _buildTargetLabel,
                       style: textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onSurface,
-                      ),
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
+                          ) ??
+                          TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
+                          ),
                       textAlign: TextAlign.center,
                     ),
                   ),

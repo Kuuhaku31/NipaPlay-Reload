@@ -17,6 +17,8 @@ import 'package:nipaplay/themes/cupertino/widgets/cupertino_bottom_sheet.dart';
 import 'package:nipaplay/themes/cupertino/widgets/cupertino_settings_group_card.dart';
 import 'package:nipaplay/themes/cupertino/widgets/cupertino_settings_tile.dart';
 import 'package:nipaplay/widgets/adaptive_markdown.dart';
+import 'package:nipaplay/utils/build_target_label.dart';
+import 'package:nipaplay/widgets/about_version_banner_text.dart';
 
 class CupertinoAboutPage extends StatefulWidget {
   const CupertinoAboutPage({super.key});
@@ -26,6 +28,7 @@ class CupertinoAboutPage extends StatefulWidget {
 }
 
 class _CupertinoAboutPageState extends State<CupertinoAboutPage> {
+  late final String _buildTargetLabel = getBuildTargetLabel();
   String _version = '';
   bool _versionLoadFailed = false;
   UpdateInfo? _updateInfo;
@@ -472,8 +475,11 @@ class _CupertinoAboutPageState extends State<CupertinoAboutPage> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Text(
-                  context.l10n.aboutVersionBanner(_displayVersionText(context)),
+                AboutVersionBannerText(
+                  text: context.l10n.aboutVersionBanner(
+                    _displayVersionText(context),
+                  ),
+                  targetLabel: _buildTargetLabel,
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
