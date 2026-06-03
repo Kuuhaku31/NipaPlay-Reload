@@ -454,90 +454,94 @@ class _CupertinoAboutPageState extends State<CupertinoAboutPage> {
   ) {
     final hasUpdate = _updateInfo?.hasUpdate ?? false;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Image.asset(
-          'assets/logo.png',
-          height: 110,
-          errorBuilder: (_, __, ___) => Icon(
-            Ionicons.image_outline,
-            size: 96,
-            color: secondaryColor,
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Image.asset(
+            'assets/logo.png',
+            height: 110,
+            errorBuilder: (_, __, ___) => Icon(
+              Ionicons.image_outline,
+              size: 96,
+              color: secondaryColor,
+            ),
           ),
-        ),
-        const SizedBox(height: 18),
-        GestureDetector(
-          onTap: hasUpdate ? () => _launchURL(_updateInfo!.releaseUrl) : null,
-          child: MouseRegion(
-            cursor:
-                hasUpdate ? SystemMouseCursors.click : SystemMouseCursors.basic,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AboutVersionBannerText(
-                  text: context.l10n.aboutVersionBanner(
-                    _displayVersionText(context),
+          const SizedBox(height: 18),
+          GestureDetector(
+            onTap: hasUpdate ? () => _launchURL(_updateInfo!.releaseUrl) : null,
+            child: MouseRegion(
+              cursor: hasUpdate
+                  ? SystemMouseCursors.click
+                  : SystemMouseCursors.basic,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AboutVersionBannerText(
+                    text: context.l10n.aboutVersionBanner(
+                      _displayVersionText(context),
+                    ),
+                    targetLabel: _buildTargetLabel,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                      color: labelColor,
+                    ),
+                    textAlign: TextAlign.start,
                   ),
-                  targetLabel: _buildTargetLabel,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                    color: labelColor,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                if (hasUpdate)
-                  Positioned(
-                    top: -10,
-                    right: -12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.systemRed,
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x33999999),
-                            blurRadius: 6,
-                            offset: Offset(0, 3),
+                  if (hasUpdate)
+                    Positioned(
+                      top: -10,
+                      right: -12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.systemRed,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x33999999),
+                              blurRadius: 6,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: const Text(
+                          'NEW',
+                          style: TextStyle(
+                            color: CupertinoColors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.6,
                           ),
-                        ],
-                      ),
-                      child: const Text(
-                        'NEW',
-                        style: TextStyle(
-                          color: CupertinoColors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.6,
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        CupertinoButton.filled(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          onPressed: _isCheckingUpdate ? null : _manualCheckForUpdates,
-          child: _isCheckingUpdate
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CupertinoActivityIndicator(radius: 8),
-                    const SizedBox(width: 8),
-                    Text(context.l10n.aboutCheckingUpdates),
-                  ],
-                )
-              : Text(context.l10n.aboutCheckUpdates),
-        ),
-      ],
+          const SizedBox(height: 12),
+          CupertinoButton.filled(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            onPressed: _isCheckingUpdate ? null : _manualCheckForUpdates,
+            child: _isCheckingUpdate
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CupertinoActivityIndicator(radius: 8),
+                      const SizedBox(width: 8),
+                      Text(context.l10n.aboutCheckingUpdates),
+                    ],
+                  )
+                : Text(context.l10n.aboutCheckUpdates),
+          ),
+        ],
+      ),
     );
   }
 

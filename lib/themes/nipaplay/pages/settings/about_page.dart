@@ -333,124 +333,135 @@ class _AboutPageState extends State<AboutPage> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(height: 40), // Add some space at the top
-          Image.asset(
-            'assets/logo.png', // Ensure this path is correct
-            height: 120, // Adjust size as needed
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(Ionicons.image_outline,
-                  size: 100,
-                  color: colorScheme.onSurface
-                      .withOpacity(0.7)); // Placeholder if logo fails
-            },
-          ),
-          SizedBox(height: 24),
-          // 版本信息，点击跳转到releases页面（如果有更新）
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                GestureDetector(
-                  onTap: _updateInfo?.hasUpdate == true
-                      ? () => _launchURL(_updateInfo!.releaseUrl)
-                      : null,
-                  child: MouseRegion(
-                    cursor: _updateInfo?.hasUpdate == true
+          SizedBox(
+            width: double.infinity,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Image.asset(
+                    'assets/logo.png', // Ensure this path is correct
+                    height: 120, // Adjust size as needed
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(Ionicons.image_outline,
+                          size: 100,
+                          color: colorScheme.onSurface
+                              .withOpacity(0.7)); // Placeholder if logo fails
+                    },
+                  ),
+                  SizedBox(height: 24),
+                  // 版本信息，点击跳转到releases页面（如果有更新）
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      GestureDetector(
+                        onTap: _updateInfo?.hasUpdate == true
+                            ? () => _launchURL(_updateInfo!.releaseUrl)
+                            : null,
+                        child: MouseRegion(
+                          cursor: _updateInfo?.hasUpdate == true
+                              ? SystemMouseCursors.click
+                              : SystemMouseCursors.basic,
+                          child: AboutVersionBannerText(
+                            text: l10n.aboutVersionBanner(
+                                _displayVersionText(context)),
+                            targetLabel: _buildTargetLabel,
+                            style: textTheme.headlineMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onSurface,
+                                ) ??
+                                TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onSurface,
+                                ),
+                            textAlign: TextAlign.start,
+                          ),
+                        ),
+                      ),
+                      // NEW 标识 - 独立定位
+                      if (_updateInfo?.hasUpdate == true)
+                        Positioned(
+                          top: -8,
+                          right: -8,
+                          child: const Text(
+                            'NEW',
+                            locale: Locale("zh-Hans", "zh"),
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  SizedBox(height: 20),
+                  MouseRegion(
+                    onEnter: (_) => isUpdateButtonEnabled
+                        ? setState(() => _isUpdateButtonHovered = true)
+                        : null,
+                    onExit: (_) => isUpdateButtonEnabled
+                        ? setState(() => _isUpdateButtonHovered = false)
+                        : null,
+                    cursor: isUpdateButtonEnabled
                         ? SystemMouseCursors.click
                         : SystemMouseCursors.basic,
-                    child: AboutVersionBannerText(
-                      text:
-                          l10n.aboutVersionBanner(_displayVersionText(context)),
-                      targetLabel: _buildTargetLabel,
-                      style: textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: colorScheme.onSurface,
-                          ) ??
-                          TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: colorScheme.onSurface,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: InkWell(
+                        onTap: isUpdateButtonEnabled
+                            ? _manualCheckForUpdates
+                            : null,
+                        hoverColor: Colors.transparent,
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          child: AnimatedScale(
+                            scale: showUpdateButtonHover ? 1.1 : 1.0,
+                            alignment: Alignment.centerLeft,
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOutBack,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_isCheckingUpdate)
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          updateButtonColor),
+                                    ),
+                                  )
+                                else
+                                  Icon(
+                                    Icons.system_update_alt,
+                                    size: 18,
+                                    color: updateButtonColor,
+                                  ),
+                                SizedBox(width: 6),
+                                Text(
+                                  _isCheckingUpdate
+                                      ? l10n.aboutCheckingUpdates
+                                      : l10n.aboutCheckUpdates,
+                                  style: textTheme.labelLarge?.copyWith(
+                                        color: updateButtonColor,
+                                      ) ??
+                                      TextStyle(color: updateButtonColor),
+                                ),
+                              ],
+                            ),
                           ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                // NEW 标识 - 独立定位
-                if (_updateInfo?.hasUpdate == true)
-                  Positioned(
-                    top: -8,
-                    right: -8,
-                    child: const Text(
-                      'NEW',
-                      locale: Locale("zh-Hans", "zh"),
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                   ),
-              ],
-            ),
-          ),
-          SizedBox(height: 20),
-          MouseRegion(
-            onEnter: (_) => isUpdateButtonEnabled
-                ? setState(() => _isUpdateButtonHovered = true)
-                : null,
-            onExit: (_) => isUpdateButtonEnabled
-                ? setState(() => _isUpdateButtonHovered = false)
-                : null,
-            cursor: isUpdateButtonEnabled
-                ? SystemMouseCursors.click
-                : SystemMouseCursors.basic,
-            child: Material(
-              type: MaterialType.transparency,
-              child: InkWell(
-                onTap: isUpdateButtonEnabled ? _manualCheckForUpdates : null,
-                hoverColor: Colors.transparent,
-                splashColor: Colors.transparent,
-                highlightColor: Colors.transparent,
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: AnimatedScale(
-                    scale: showUpdateButtonHover ? 1.1 : 1.0,
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOutBack,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_isCheckingUpdate)
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  updateButtonColor),
-                            ),
-                          )
-                        else
-                          Icon(
-                            Icons.system_update_alt,
-                            size: 18,
-                            color: updateButtonColor,
-                          ),
-                        SizedBox(width: 6),
-                        Text(
-                          _isCheckingUpdate
-                              ? l10n.aboutCheckingUpdates
-                              : l10n.aboutCheckUpdates,
-                          style: textTheme.labelLarge?.copyWith(
-                                color: updateButtonColor,
-                              ) ??
-                              TextStyle(color: updateButtonColor),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                ],
               ),
             ),
           ),
