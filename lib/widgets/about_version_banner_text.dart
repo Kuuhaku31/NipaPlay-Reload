@@ -29,7 +29,9 @@ class AboutVersionBannerText extends StatelessWidget {
 
     final defaultFontSize = DefaultTextStyle.of(context).style.fontSize ?? 24;
     final baseFontSize = style.fontSize ?? defaultFontSize;
-    final versionText = text.substring(_productName.length).trimLeft();
+    final versionText = _extractVersionText(text);
+    final detailText =
+        ['for $label', if (versionText.isNotEmpty) versionText].join(' ');
 
     return Text.rich(
       TextSpan(
@@ -37,7 +39,7 @@ class AboutVersionBannerText extends StatelessWidget {
         children: [
           const TextSpan(text: _productName),
           TextSpan(
-            text: '\nfor $label',
+            text: '\n$detailText',
             style: style.copyWith(
               color: _mutedColor(style.color),
               fontSize: baseFontSize * 0.58,
@@ -45,7 +47,6 @@ class AboutVersionBannerText extends StatelessWidget {
               height: 1.2,
             ),
           ),
-          if (versionText.isNotEmpty) TextSpan(text: '\n$versionText'),
         ],
       ),
       textAlign: textAlign,
@@ -57,5 +58,14 @@ class AboutVersionBannerText extends StatelessWidget {
       return null;
     }
     return color.withValues(alpha: color.a * 0.72);
+  }
+
+  String _extractVersionText(String bannerText) {
+    final tail = bannerText.substring(_productName.length).trim();
+    if (tail.isEmpty) {
+      return '';
+    }
+    final match = RegExp(r'[:：]\s*(.+)$').firstMatch(tail);
+    return (match?.group(1) ?? tail).trim();
   }
 }
