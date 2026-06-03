@@ -39,25 +39,16 @@ class AboutVersionBannerText extends StatelessWidget {
         children: [
           const TextSpan(text: _productName),
           TextSpan(
-            text: '\n$detailText',
+            text: ' $detailText',
             style: style.copyWith(
-              color: _mutedColor(style.color),
               fontSize: baseFontSize * 0.58,
               fontWeight: FontWeight.w600,
-              height: 1.2,
             ),
           ),
         ],
       ),
       textAlign: textAlign,
     );
-  }
-
-  Color? _mutedColor(Color? color) {
-    if (color == null) {
-      return null;
-    }
-    return color.withValues(alpha: color.a * 0.72);
   }
 
   String _extractVersionText(String bannerText) {
