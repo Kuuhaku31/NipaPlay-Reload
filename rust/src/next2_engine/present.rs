@@ -8,6 +8,11 @@ use metal::MTLTextureType;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use wgpu_hal::{api::Metal, CopyExtent};
 
+#[cfg(target_os = "linux")]
+use std::num::NonZeroU32;
+#[cfg(target_os = "linux")]
+use wgpu_hal::api::Gles;
+
 #[cfg(target_os = "android")]
 use std::{ffi::c_void, ptr::NonNull};
 #[cfg(target_os = "android")]
@@ -37,12 +42,17 @@ pub(crate) struct PresentTextureTarget {
     render_texture: wgpu::Texture,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) format: wgpu::TextureFormat,
     _bytes_per_row: u32,
 }
 
 impl PresentTextureTarget {
     pub(crate) fn render_texture(&self) -> &wgpu::Texture {
         &self.render_texture
+    }
+
+    pub(crate) fn format(&self) -> wgpu::TextureFormat {
+        self.format
     }
 }
 
@@ -278,6 +288,7 @@ pub(crate) fn attach_present_texture(
             render_texture: texture,
             width,
             height,
+            format: wgpu::TextureFormat::Bgra8Unorm,
             _bytes_per_row: bytes_per_row,
         }));
     }
@@ -286,4 +297,64 @@ pub(crate) fn attach_present_texture(
         let _ = (device, mtl_texture_ptr, width, height, bytes_per_row);
         None
     }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn attach_present_gl_texture(
+    device: &wgpu::Device,
+    texture_name: u32,
+    width: u32,
+    height: u32,
+) -> Option<PresentTarget> {
+    let name = NonZeroU32::new(texture_name)?;
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    let format = wgpu::TextureFormat::Rgba8Unorm;
+    let hal_desc = wgpu_hal::TextureDescriptor {
+        label: Some("next2 present texture (external GL texture)"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUses::COLOR_TARGET | wgpu::TextureUses::RESOURCE,
+        memory_flags: wgpu_hal::MemoryFlags::empty(),
+        view_formats: vec![],
+    };
+
+    let hal_texture = unsafe {
+        device
+            .as_hal::<Gles>()
+            .map(|hal_device| hal_device.texture_from_raw(name, &hal_desc, Some(Box::new(|| {}))))
+    }?;
+
+    let desc = wgpu::TextureDescriptor {
+        label: Some("next2 present texture (external GL texture)"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    };
+
+    let texture = unsafe { device.create_texture_from_hal::<Gles>(hal_texture, &desc) };
+    Some(PresentTarget::Texture(PresentTextureTarget {
+        render_texture: texture,
+        width,
+        height,
+        format,
+        _bytes_per_row: 0,
+    }))
 }

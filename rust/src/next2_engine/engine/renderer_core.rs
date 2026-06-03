@@ -290,6 +290,9 @@ impl Next2Renderer {
             ctx,
             #[cfg(target_os = "android")]
             surface_pipeline: None,
+            texture_format: wgpu::TextureFormat::Bgra8Unorm,
+            texture_pipeline: None,
+            texture_screen_pipeline: None,
             offscreen_pipeline,
             blur_pipeline_horizontal,
             blur_pipeline_vertical,
@@ -482,15 +485,40 @@ impl Next2Renderer {
             PresentTarget::Texture(texture_target) => {
                 self.width = texture_target.width.max(1);
                 self.height = texture_target.height.max(1);
-                let glyph_pipeline = self.offscreen_pipeline.clone();
-                let screen_pipeline = self.screen_pipeline.clone();
-                let view =
-                    texture_target
-                        .render_texture()
-                        .create_view(&wgpu::TextureViewDescriptor {
-                            format: Some(wgpu::TextureFormat::Bgra8Unorm),
-                            ..Default::default()
-                        });
+                let target_format = texture_target.format();
+                let (glyph_pipeline, screen_pipeline) = if target_format == wgpu::TextureFormat::Bgra8Unorm {
+                    (self.offscreen_pipeline.clone(), self.screen_pipeline.clone())
+                } else {
+                    if self.texture_format != target_format
+                        || self.texture_pipeline.is_none()
+                        || self.texture_screen_pipeline.is_none()
+                    {
+                        self.texture_pipeline = Some(Self::create_pipeline(
+                            self.ctx.device.as_ref(),
+                            &self.atlas_bind_group_layout,
+                            target_format,
+                            "next2 texture render pipeline",
+                        ));
+                        self.texture_screen_pipeline = Some(Self::create_screen_pipeline(
+                            self.ctx.device.as_ref(),
+                            &self.screen_bind_group_layout,
+                            target_format,
+                            NEXT2_SCREEN_COPY_WGSL,
+                            "next2 texture composite pipeline",
+                        ));
+                        self.texture_format = target_format;
+                    }
+                    (
+                        self.texture_pipeline.as_ref().unwrap().clone(),
+                        self.texture_screen_pipeline.as_ref().unwrap().clone(),
+                    )
+                };
+                let view = texture_target.render_texture().create_view(
+                    &wgpu::TextureViewDescriptor {
+                        format: Some(target_format),
+                        ..Default::default()
+                    },
+                );
                 self.draw_to_view(&view, &glyph_pipeline, &screen_pipeline);
             }
         }

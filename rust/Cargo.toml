@@ -40,6 +40,9 @@ windows = { version = "0.58", features = [
     "Win32_Foundation",
 ] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu-hal = { version = "27.0.4", features = ["gles"] }
+
 [target.'cfg(target_os = "android")'.dependencies]
 jni-sys = "0.4.1"
 ndk-sys = "0.6.0+11769913"

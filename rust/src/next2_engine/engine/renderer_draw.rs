@@ -57,7 +57,8 @@ impl Next2Renderer {
                     occlusion_query_set: None,
                 });
 
-                pass.set_pipeline(glyph_pipeline);
+                let shadow_pipeline = self.offscreen_pipeline.clone();
+                pass.set_pipeline(&shadow_pipeline);
                 pass.set_bind_group(0, &self.atlas_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.shadow_vertex_buffer.slice(..));
                 pass.draw(0..self.shadow_vertices.len() as u32, 0..1);

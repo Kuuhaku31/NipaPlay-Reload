@@ -799,6 +799,9 @@ struct Next2Renderer {
     ctx: Arc<EngineDeviceContext>,
     #[cfg(target_os = "android")]
     surface_pipeline: Option<wgpu::RenderPipeline>,
+    texture_format: wgpu::TextureFormat,
+    texture_pipeline: Option<wgpu::RenderPipeline>,
+    texture_screen_pipeline: Option<wgpu::RenderPipeline>,
     offscreen_pipeline: wgpu::RenderPipeline,
     blur_pipeline_horizontal: wgpu::RenderPipeline,
     blur_pipeline_vertical: wgpu::RenderPipeline,
