@@ -2,6 +2,8 @@ use std::ffi::{c_char, c_void, CStr};
 #[cfg(not(target_os = "linux"))]
 use std::sync::mpsc;
 
+#[cfg(target_os = "windows")]
+use super::engine::create_windows_dxgi_shared_texture;
 #[cfg(not(target_os = "linux"))]
 use super::engine::{
     create_engine, lookup_engine, n2log, remove_engine, EngineCommand, RenderFrameInput,
@@ -148,6 +150,46 @@ pub extern "C" fn next2_engine_attach_present_surface(
     _width: u32,
     _height: u32,
 ) {
+}
+
+#[cfg(target_os = "windows")]
+#[no_mangle]
+pub extern "C" fn next2_engine_create_dxgi_shared_texture(
+    handle: u64,
+    width: u32,
+    height: u32,
+    out_shared_handle: *mut usize,
+    out_width: *mut u32,
+    out_height: *mut u32,
+) -> u8 {
+    if out_shared_handle.is_null() || out_width.is_null() || out_height.is_null() {
+        return 0;
+    }
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        create_windows_dxgi_shared_texture(handle, width, height)
+    }));
+
+    match result {
+        Ok(Some(info)) => {
+            unsafe {
+                *out_shared_handle = info.shared_handle;
+                *out_width = info.width;
+                *out_height = info.height;
+            }
+            1
+        }
+        Ok(None) => 0,
+        Err(e) => {
+            let msg = e
+                .downcast_ref::<String>()
+                .map(|s| s.as_str())
+                .or_else(|| e.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown");
+            n2log(&format!("FFI create_dxgi_shared_texture PANIC: {msg}"));
+            0
+        }
+    }
 }
 
 #[no_mangle]

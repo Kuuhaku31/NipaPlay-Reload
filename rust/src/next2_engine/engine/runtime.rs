@@ -39,6 +39,8 @@ use ttf_parser::{Face, GlyphId};
 
 #[cfg(target_os = "linux")]
 use super::present::attach_present_gl_texture;
+#[cfg(target_os = "windows")]
+use super::present::create_dx12_shared_present_texture;
 use super::present::{attach_present_texture, signal_frame_ready, PresentTarget};
 
 #[cfg(target_os = "android")]
@@ -88,6 +90,14 @@ pub struct RenderFrameInput {
     pub custom_font_file_path: String,
 }
 
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+pub struct DxgiSharedTextureInfo {
+    pub shared_handle: usize,
+    pub width: u32,
+    pub height: u32,
+}
+
 pub enum EngineCommand {
     AttachPresentTexture {
         raw_target_ptr: usize,
@@ -95,6 +105,12 @@ pub enum EngineCommand {
         height: u32,
         bytes_per_row: u32,
         reply: Option<mpsc::Sender<bool>>,
+    },
+    #[cfg(target_os = "windows")]
+    CreateDxgiSharedTexture {
+        width: u32,
+        height: u32,
+        reply: mpsc::Sender<Option<DxgiSharedTextureInfo>>,
     },
     Resize {
         width: u32,
@@ -639,6 +655,25 @@ pub fn attach_present_surface(
     false
 }
 
+#[cfg(target_os = "windows")]
+pub fn create_windows_dxgi_shared_texture(
+    handle: u64,
+    width: u32,
+    height: u32,
+) -> Option<DxgiSharedTextureInfo> {
+    let entry = lookup_engine(handle)?;
+    let (reply_tx, reply_rx) = mpsc::channel();
+    entry
+        .cmd_tx
+        .send(EngineCommand::CreateDxgiSharedTexture {
+            width,
+            height,
+            reply: reply_tx,
+        })
+        .ok()?;
+    reply_rx.recv_timeout(Duration::from_secs(2)).ok().flatten()
+}
+
 fn run_engine_loop(
     ctx: Arc<EngineDeviceContext>,
     mut width: u32,
@@ -732,6 +767,33 @@ fn run_engine_loop(
                     height = h.max(1);
                     let _ = renderer.resize(width, height);
                     has_pending_frame = true;
+                }
+                #[cfg(target_os = "windows")]
+                EngineCommand::CreateDxgiSharedTexture {
+                    width: w,
+                    height: h,
+                    reply,
+                } => {
+                    let w = w.max(1);
+                    let h = h.max(1);
+                    let response = if let Some((target, shared_handle)) =
+                        create_dx12_shared_present_texture(ctx.device.as_ref(), w, h)
+                    {
+                        present_target = Some(target);
+                        width = w;
+                        height = h;
+                        let _ = renderer.resize(width, height);
+                        has_pending_frame = true;
+                        Some(DxgiSharedTextureInfo {
+                            shared_handle,
+                            width,
+                            height,
+                        })
+                    } else {
+                        present_target = None;
+                        None
+                    };
+                    let _ = reply.send(response);
                 }
                 EngineCommand::Resize {
                     width: w,
