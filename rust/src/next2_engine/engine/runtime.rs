@@ -3,7 +3,7 @@ use std::ffi::c_void;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -35,7 +35,7 @@ use nalgebra::{Affine2, Similarity2, Vector2};
 use serde::Deserialize;
 use ttf_parser::{Face, GlyphId};
 
-use super::present::{attach_present_texture, PresentTarget};
+use super::present::{attach_present_texture, signal_frame_ready, PresentTarget};
 
 #[cfg(target_os = "android")]
 use ndk_sys::ANativeWindow;
@@ -84,13 +84,6 @@ pub struct RenderFrameInput {
     pub custom_font_file_path: String,
 }
 
-#[derive(Clone)]
-pub struct Next2ReadbackFrame {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Vec<u8>,
-}
-
 pub enum EngineCommand {
     AttachPresentTexture {
         raw_target_ptr: usize,
@@ -113,7 +106,7 @@ pub enum EngineCommand {
 
 pub struct EngineEntry {
     pub cmd_tx: mpsc::Sender<EngineCommand>,
-    pub latest_frame: Arc<Mutex<Option<Next2ReadbackFrame>>>,
+    pub frame_ready: Arc<AtomicBool>,
     pub mtl_device_ptr: usize,
 }
 
@@ -145,7 +138,7 @@ pub fn lookup_engine(handle: u64) -> Option<EngineEntry> {
     let entry = guard.get(&handle)?;
     Some(EngineEntry {
         cmd_tx: entry.cmd_tx.clone(),
-        latest_frame: Arc::clone(&entry.latest_frame),
+        frame_ready: Arc::clone(&entry.frame_ready),
         mtl_device_ptr: entry.mtl_device_ptr,
     })
 }
@@ -162,20 +155,7 @@ pub fn poll_frame_ready(handle: u64) -> bool {
     let Some(entry) = lookup_engine(handle) else {
         return false;
     };
-    let latest_frame = Arc::clone(&entry.latest_frame);
-    drop(entry);
-    latest_frame
-        .try_lock()
-        .map(|guard| guard.is_some())
-        .unwrap_or(false)
-}
-
-pub fn readback_frame_bgra(handle: u64) -> Option<Next2ReadbackFrame> {
-    let entry = lookup_engine(handle)?;
-    let latest_frame = Arc::clone(&entry.latest_frame);
-    drop(entry);
-    let guard = latest_frame.try_lock().ok()?;
-    guard.clone()
+    entry.frame_ready.swap(false, Ordering::AcqRel)
 }
 
 pub fn create_engine(width: u32, height: u32) -> Result<u64, String> {
@@ -189,14 +169,14 @@ pub fn create_engine(width: u32, height: u32) -> Result<u64, String> {
     let mtl_device_ptr = extract_mtl_device_ptr(ctx.device.as_ref()) as usize;
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<EngineCommand>();
-    let latest_frame: Arc<Mutex<Option<Next2ReadbackFrame>>> = Arc::new(Mutex::new(None));
-    let latest_frame_thread = Arc::clone(&latest_frame);
+    let frame_ready = Arc::new(AtomicBool::new(false));
+    let frame_ready_thread = Arc::clone(&frame_ready);
 
     thread::Builder::new()
         .name("next2-engine".to_string())
         .spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_engine_loop(ctx, width, height, latest_frame_thread, cmd_rx);
+                run_engine_loop(ctx, width, height, frame_ready_thread, cmd_rx);
             }));
             if let Err(e) = result {
                 if let Some(s) = e.downcast_ref::<String>() {
@@ -223,7 +203,7 @@ pub fn create_engine(width: u32, height: u32) -> Result<u64, String> {
         handle,
         EngineEntry {
             cmd_tx,
-            latest_frame,
+            frame_ready,
             mtl_device_ptr,
         },
     );
@@ -371,7 +351,7 @@ fn run_engine_loop(
     ctx: Arc<EngineDeviceContext>,
     mut width: u32,
     mut height: u32,
-    latest_frame: Arc<Mutex<Option<Next2ReadbackFrame>>>,
+    frame_ready: Arc<AtomicBool>,
     cmd_rx: mpsc::Receiver<EngineCommand>,
 ) {
     let mut renderer = match Next2Renderer::new(Arc::clone(&ctx), width, height, None) {
@@ -501,13 +481,10 @@ fn run_engine_loop(
         if has_pending_frame {
             if let Some(target) = present_target.as_mut() {
                 renderer.draw_to_present(target);
-                renderer.draw_to_offscreen();
+                signal_frame_ready(ctx.queue.as_ref(), Arc::clone(&frame_ready));
             } else {
-                renderer.draw_to_offscreen();
+                frame_ready.store(false, Ordering::Release);
             }
-
-            let frame = renderer.readback_pixels();
-            *latest_frame.lock().unwrap() = frame;
 
             has_pending_frame = false;
         }

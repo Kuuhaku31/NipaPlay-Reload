@@ -2,8 +2,7 @@ use std::ffi::{c_char, c_void, CStr};
 use std::sync::mpsc;
 
 use super::engine::{
-    create_engine, lookup_engine, n2log, readback_frame_bgra, remove_engine, EngineCommand,
-    RenderFrameInput,
+    create_engine, lookup_engine, n2log, remove_engine, EngineCommand, RenderFrameInput,
 };
 
 fn parse_c_string(ptr: *const c_char) -> Option<String> {
@@ -190,51 +189,6 @@ pub extern "C" fn next2_engine_set_frame(
                 .or_else(|| e.downcast_ref::<&str>().copied())
                 .unwrap_or("unknown");
             n2log(&format!("FFI set_frame PANIC: {msg}"));
-            0
-        }
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn next2_engine_copy_bgra_frame(
-    handle: u64,
-    out_pixels: *mut u8,
-    out_pixels_len: u32,
-    out_width: *mut u32,
-    out_height: *mut u32,
-) -> u8 {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let Some(frame) = readback_frame_bgra(handle) else {
-            return 0;
-        };
-        let out_pixels_len = out_pixels_len as usize;
-        if out_pixels.is_null() || out_pixels_len < frame.pixels.len() {
-            return 0;
-        }
-        if !out_width.is_null() {
-            unsafe {
-                *out_width = frame.width;
-            }
-        }
-        if !out_height.is_null() {
-            unsafe {
-                *out_height = frame.height;
-            }
-        }
-        unsafe {
-            std::ptr::copy_nonoverlapping(frame.pixels.as_ptr(), out_pixels, frame.pixels.len());
-        }
-        1
-    }));
-    match result {
-        Ok(v) => v,
-        Err(e) => {
-            let msg = e
-                .downcast_ref::<String>()
-                .map(|s| s.as_str())
-                .or_else(|| e.downcast_ref::<&str>().copied())
-                .unwrap_or("unknown");
-            n2log(&format!("FFI copy_bgra_frame PANIC: {msg}"));
             0
         }
     }

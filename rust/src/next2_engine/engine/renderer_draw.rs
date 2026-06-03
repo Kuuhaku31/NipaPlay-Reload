@@ -596,21 +596,6 @@ impl Next2Renderer {
     }
 }
 
-fn create_render_texture(
-    device: &wgpu::Device,
-    width: u32,
-    height: u32,
-    label: Option<&'static str>,
-) -> wgpu::Texture {
-    create_render_texture_with_usage(
-        device,
-        width,
-        height,
-        label,
-        wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-    )
-}
-
 fn create_render_texture_with_usage(
     device: &wgpu::Device,
     width: u32,

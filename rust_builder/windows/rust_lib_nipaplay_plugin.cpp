@@ -24,11 +24,6 @@ uint8_t next2_engine_set_frame(uint64_t handle,
                                const char* custom_font_family,
                                const char* custom_font_file_path);
 uint8_t next2_engine_reset_scene(uint64_t handle);
-uint8_t next2_engine_copy_bgra_frame(uint64_t handle,
-                                     uint8_t* out_pixels,
-                                     uint32_t out_len,
-                                     uint32_t* out_width,
-                                     uint32_t* out_height);
 }
 
 namespace rust_lib_nipaplay {
@@ -400,17 +395,6 @@ void RustLibNipaplayPlugin::Tick() {
     if (!next2_engine_poll_frame_ready(state->engine_handle)) {
       continue;
     }
-    uint32_t out_w = 0;
-    uint32_t out_h = 0;
-    const uint32_t out_len =
-        static_cast<uint32_t>(state->binding->rgba.size());
-    const uint8_t ok = next2_engine_copy_bgra_frame(
-        state->engine_handle, state->binding->rgba.data(), out_len, &out_w, &out_h);
-    if (ok == 0 || out_w == 0 || out_h == 0) {
-      continue;
-    }
-    state->binding->pixel_buffer.width = out_w;
-    state->binding->pixel_buffer.height = out_h;
     texture_registrar_->MarkTextureFrameAvailable(state->texture_id);
   }
 }

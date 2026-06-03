@@ -819,7 +819,6 @@ struct Next2Renderer {
     clear_color: [f64; 4],
     width: u32,
     height: u32,
-    offscreen_texture: wgpu::Texture,
     shadow_mask_texture: wgpu::Texture,
     shadow_blur_texture: wgpu::Texture,
     shadow_width: u32,

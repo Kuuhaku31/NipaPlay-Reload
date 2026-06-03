@@ -25,11 +25,6 @@ uint8_t next2_engine_set_frame(uint64_t handle,
                                const char* custom_font_family,
                                const char* custom_font_file_path);
 uint8_t next2_engine_reset_scene(uint64_t handle);
-uint8_t next2_engine_copy_bgra_frame(uint64_t handle,
-                                     uint8_t* out_pixels,
-                                     uint32_t out_len,
-                                     uint32_t* out_width,
-                                     uint32_t* out_height);
 }
 
 #define RUST_LIB_NIPAPLAY_PLUGIN(obj)                                      \
@@ -222,20 +217,6 @@ static gboolean tick_cb(gpointer user_data) {
     if (!next2_engine_poll_frame_ready(state->engine_handle)) {
       continue;
     }
-    std::lock_guard<std::mutex> guard(state->lock);
-    if (state->rgba.empty() || state->width == 0 || state->height == 0) {
-      continue;
-    }
-    uint32_t out_w = 0;
-    uint32_t out_h = 0;
-    const uint8_t ok = next2_engine_copy_bgra_frame(
-        state->engine_handle, state->rgba.data(),
-        static_cast<uint32_t>(state->rgba.size()), &out_w, &out_h);
-    if (ok == 0 || out_w == 0 || out_h == 0) {
-      continue;
-    }
-    state->width = out_w;
-    state->height = out_h;
     fl_texture_registrar_mark_texture_frame_available(
         self->texture_registrar, state->texture_base);
   }
