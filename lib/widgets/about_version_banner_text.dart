@@ -29,6 +29,7 @@ class AboutVersionBannerText extends StatelessWidget {
 
     final defaultFontSize = DefaultTextStyle.of(context).style.fontSize ?? 24;
     final baseFontSize = style.fontSize ?? defaultFontSize;
+    final versionText = text.substring(_productName.length).trimLeft();
 
     return Text.rich(
       TextSpan(
@@ -36,14 +37,15 @@ class AboutVersionBannerText extends StatelessWidget {
         children: [
           const TextSpan(text: _productName),
           TextSpan(
-            text: ' for $label',
+            text: '\nfor $label',
             style: style.copyWith(
               color: _mutedColor(style.color),
               fontSize: baseFontSize * 0.58,
               fontWeight: FontWeight.w600,
+              height: 1.2,
             ),
           ),
-          TextSpan(text: text.substring(_productName.length)),
+          if (versionText.isNotEmpty) TextSpan(text: '\n$versionText'),
         ],
       ),
       textAlign: textAlign,
