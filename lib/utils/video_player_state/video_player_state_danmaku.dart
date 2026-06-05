@@ -29,6 +29,32 @@ class _SpoilerAiRequestConfig {
 }
 
 extension VideoPlayerStateDanmaku on VideoPlayerState {
+  // Whether the active player kernel renders danmaku natively (Kuroko).
+  // When true, NipaPlay feeds its merged/filtered danmaku list to the kernel
+  // and keeps its own Flutter danmaku overlay empty to avoid drawing twice.
+  bool get _kurokoNativeDanmaku {
+    try {
+      return player.supportsNativeDanmaku;
+    } catch (_) {
+      // `player` is `late`; before it is initialized treat as unsupported.
+      return false;
+    }
+  }
+
+  // Push the current danmaku display settings down to the native kernel.
+  // NipaPlay already merges + block-filters the fed list, so the kernel only
+  // owns layout/render (mergeDuplicates disabled here).
+  void _syncKurokoDanmakuConfig() {
+    if (!_kurokoNativeDanmaku) return;
+    unawaited(player.setNativeDanmakuConfig(
+      enabled: _danmakuVisible,
+      opacity: _danmakuOpacity,
+      fontSize: _danmakuFontSize > 0 ? _danmakuFontSize : null,
+      displayArea: _danmakuDisplayArea,
+      mergeDuplicates: false,
+    ));
+  }
+
   Future<void> _autoDetectAndLoadLocalDanmakuFromVideoDirectory(
       String videoPath) async {
     if (_isDisposed || kIsWeb) return;
@@ -542,8 +568,17 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     _danmakuList = filteredList;
     _danmakuListVersion++;
 
-    danmakuController?.clearDanmaku();
-    danmakuController?.loadDanmaku(filteredList);
+    if (_kurokoNativeDanmaku) {
+      // Kuroko composites danmaku into the video frame natively. Feed it the
+      // already merged/filtered list and keep the Flutter overlay empty so
+      // danmaku isn't drawn twice.
+      _syncKurokoDanmakuConfig();
+      unawaited(player.loadNativeDanmaku(filteredList));
+      danmakuController?.clearDanmaku();
+    } else {
+      danmakuController?.clearDanmaku();
+      danmakuController?.loadDanmaku(filteredList);
+    }
 
     // 通过更新key来强制刷新DanmakuOverlay
     _danmakuOverlayKey = 'danmaku_${DateTime.now().millisecondsSinceEpoch}';

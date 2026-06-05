@@ -317,6 +317,60 @@ class Player {
     // 回退到同步版本
     return getDetailedMediaInfo();
   }
+
+  // ---- Native danmaku passthrough ----
+  // Some kernels (Kuroko) composite danmaku into the video frame natively.
+  // These forward to the delegate via dynamic dispatch so the abstraction
+  // layer does not need to depend on a concrete adapter type.
+
+  bool get supportsNativeDanmaku {
+    try {
+      final v = (_delegate as dynamic).supportsNativeDanmaku;
+      return v is bool ? v : false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> loadNativeDanmaku(List<Map<String, dynamic>> danmakuList) async {
+    try {
+      final r = (_delegate as dynamic).loadDanmakuList(danmakuList);
+      if (r is Future) await r;
+    } catch (_) {}
+  }
+
+  Future<void> clearNativeDanmaku() async {
+    try {
+      final r = (_delegate as dynamic).clearDanmaku();
+      if (r is Future) await r;
+    } catch (_) {}
+  }
+
+  Future<void> setNativeDanmakuConfig({
+    bool? enabled,
+    double? opacity,
+    double? fontSize,
+    double? displayArea,
+    bool? mergeDuplicates,
+  }) async {
+    try {
+      final r = (_delegate as dynamic).setDanmakuConfig(
+        enabled: enabled,
+        opacity: opacity,
+        fontSize: fontSize,
+        displayArea: displayArea,
+        mergeDuplicates: mergeDuplicates,
+      );
+      if (r is Future) await r;
+    } catch (_) {}
+  }
+
+  Future<void> setNativeDanmakuGlobalOffset(Duration offset) async {
+    try {
+      final r = (_delegate as dynamic).setDanmakuGlobalOffset(offset);
+      if (r is Future) await r;
+    } catch (_) {}
+  }
 }
 
 // Type aliases for full compatibility if VideoPlayerState uses these type names

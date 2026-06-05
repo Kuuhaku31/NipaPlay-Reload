@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
@@ -40,6 +41,13 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   int _lastPositionMs = 0;
   DateTime _lastPositionUpdate = DateTime.now();
   bool _disposed = false;
+
+  // Real Kuroko track descriptors, kept so the UI's index-based
+  // activeAudioTracks/activeSubtitleTracks can be mapped back to native ids.
+  List<KurokoTrackInfo> _audioTrackInfos = const <KurokoTrackInfo>[];
+  List<KurokoTrackInfo> _subtitleTrackInfos = const <KurokoTrackInfo>[];
+  List<int> _activeAudioTracks = const <int>[];
+  List<int> _activeSubtitleTracks = const <int>[];
 
   static bool get _isSupported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
@@ -97,16 +105,46 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   PlayerMediaInfo get mediaInfo => _mediaInfo;
 
   @override
-  List<int> get activeSubtitleTracks => const <int>[];
+  List<int> get activeSubtitleTracks => _activeSubtitleTracks;
 
   @override
-  set activeSubtitleTracks(List<int> value) {}
+  set activeSubtitleTracks(List<int> value) {
+    _activeSubtitleTracks = List<int>.from(value);
+    if (!_isSupported) {
+      return;
+    }
+    // Empty selection means "no subtitle".
+    if (value.isEmpty) {
+      unawaited(_player.selectSubtitleTrack(null));
+      return;
+    }
+    final index = value.first;
+    if (index >= 0 && index < _subtitleTrackInfos.length) {
+      unawaited(_player.selectSubtitleTrack(_subtitleTrackInfos[index].id));
+    }
+  }
 
   @override
-  List<int> get activeAudioTracks => const <int>[];
+  List<int> get activeAudioTracks => _activeAudioTracks;
 
   @override
-  set activeAudioTracks(List<int> value) {}
+  set activeAudioTracks(List<int> value) {
+    _activeAudioTracks = List<int>.from(value);
+    if (!_isSupported) {
+      return;
+    }
+    // Empty selection falls back to the first real audio track.
+    if (value.isEmpty) {
+      if (_audioTrackInfos.isNotEmpty) {
+        unawaited(_player.selectAudioTrack(_audioTrackInfos.first.id));
+      }
+      return;
+    }
+    final index = value.first;
+    if (index >= 0 && index < _audioTrackInfos.length) {
+      unawaited(_player.selectAudioTrack(_audioTrackInfos[index].id));
+    }
+  }
 
   @override
   int get position {
@@ -216,6 +254,9 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   @override
   void setPlaybackRate(double rate) {
     _playbackRate = rate <= 0 ? 1.0 : rate;
+    if (_isSupported) {
+      unawaited(_player.setPlaybackRate(_playbackRate));
+    }
   }
 
   Widget buildPlatformVideoSurface({
@@ -229,6 +270,93 @@ class KurokoPlayerAdapter implements AbstractPlayer {
       debugLabel: debugLabel,
       onPlatformViewIdChanged: onPlatformViewIdChanged,
       onFrameRectChanged: onFrameRectChanged,
+    );
+  }
+
+  // ---- Kuroko native danmaku passthrough ----
+  //
+  // Kuroko composites danmaku into the video frame natively, so when the Kuroko
+  // kernel is active NipaPlay feeds its danmaku list + settings here instead of
+  // driving its own Flutter danmaku overlay. The list uses NipaPlay's standard
+  // danmaku maps ({time, content, type, color, ...}); Kuroko's JSON parser
+  // accepts that shape directly, so it is forwarded as-is.
+
+  bool get supportsNativeDanmaku => _isSupported;
+
+  Future<void> loadDanmakuList(List<Map<String, dynamic>> danmakuList) async {
+    if (!_isSupported) {
+      return;
+    }
+    await _player.loadDanmakuJson(jsonEncode(danmakuList));
+  }
+
+  Future<void> clearDanmaku() async {
+    if (!_isSupported) {
+      return;
+    }
+    await _player.clearDanmaku();
+  }
+
+  Future<void> setDanmakuEnabled(bool enabled) async {
+    if (!_isSupported) {
+      return;
+    }
+    await _player.setDanmakuEnabled(enabled);
+  }
+
+  Future<void> setDanmakuGlobalOffset(Duration offset) async {
+    if (!_isSupported) {
+      return;
+    }
+    await _player.setDanmakuGlobalOffset(offset);
+  }
+
+  /// Bridges NipaPlay's danmaku display settings onto Kuroko's DFM+ config.
+  /// All arguments are optional; only the supplied ones are pushed down.
+  Future<void> setDanmakuConfig({
+    bool? enabled,
+    double? fontSize,
+    double? opacity,
+    double? displayArea,
+    double? scrollDurationSeconds,
+    double? scrollSpeedFactor,
+    double? trackGapRatio,
+    double? outlineWidth,
+    int? shadowStyle,
+    String? customFontFamily,
+    String? customFontFilePath,
+    bool? mergeDuplicates,
+    bool? allowStacking,
+    int? maxQuantity,
+    int? maxLinesPerMode,
+    bool? blockTop,
+    bool? blockBottom,
+    bool? blockScroll,
+    List<String>? blockWords,
+  }) async {
+    if (!_isSupported) {
+      return;
+    }
+    await _player.setDanmakuConfig(
+      enabled: enabled,
+      fontSize: fontSize,
+      opacity: opacity,
+      displayArea: displayArea,
+      scrollDurationSeconds: scrollDurationSeconds,
+      scrollSpeedFactor: scrollSpeedFactor,
+      trackGapRatio: trackGapRatio,
+      outlineWidth: outlineWidth,
+      shadowStyle: shadowStyle,
+      customFontFamily: customFontFamily,
+      customFontFilePath: customFontFilePath,
+      mergeDuplicates: mergeDuplicates,
+      allowStacking: allowStacking,
+      maxQuantity: maxQuantity,
+      maxLinesPerMode: maxLinesPerMode,
+      blockTop: blockTop,
+      blockBottom: blockBottom,
+      blockScroll: blockScroll,
+      blockWords: blockWords,
     );
   }
 
@@ -292,28 +420,49 @@ class KurokoPlayerAdapter implements AbstractPlayer {
         ],
       );
     }
-    if (event.tracks.audio > 0) {
+    // Kuroko emits the full descriptor list (with native ids, titles and the
+    // selected flag) on TracksChanged/TrackSelectionChanged. Use it to build
+    // mediaInfo so the UI's index-based track selection maps to real ids.
+    if (event.trackList.isNotEmpty) {
+      final audioInfos = event.trackList
+          .where((t) => t.kind == KurokoTrackKind.audio)
+          .toList(growable: false);
+      final subtitleInfos = event.trackList
+          .where((t) => t.kind == KurokoTrackKind.subtitle)
+          .toList(growable: false);
+      _audioTrackInfos = audioInfos;
+      _subtitleTrackInfos = subtitleInfos;
       updatedInfo = updatedInfo.copyWith(
-        audio: List<PlayerAudioStreamInfo>.generate(
-          event.tracks.audio,
-          (index) => PlayerAudioStreamInfo(
-            codec: PlayerAudioCodecParams(name: 'unknown'),
-            title: 'Audio ${index + 1}',
-            rawRepresentation: 'Kuroko Audio ${index + 1}',
-          ),
-        ),
+        audio: <PlayerAudioStreamInfo>[
+          for (var i = 0; i < audioInfos.length; i++)
+            PlayerAudioStreamInfo(
+              codec: PlayerAudioCodecParams(
+                name: audioInfos[i].codec ?? 'unknown',
+              ),
+              title: audioInfos[i].title ?? 'Audio ${i + 1}',
+              language: audioInfos[i].language,
+              metadata: <String, String>{'id': '${audioInfos[i].id}'},
+              rawRepresentation: 'Kuroko Audio ${i + 1}',
+            ),
+        ],
+        subtitle: <PlayerSubtitleStreamInfo>[
+          for (var i = 0; i < subtitleInfos.length; i++)
+            PlayerSubtitleStreamInfo(
+              title: subtitleInfos[i].title ?? 'Subtitle ${i + 1}',
+              language: subtitleInfos[i].language,
+              metadata: <String, String>{'id': '${subtitleInfos[i].id}'},
+              rawRepresentation: 'Kuroko Subtitle ${i + 1}',
+            ),
+        ],
       );
-    }
-    if (event.tracks.subtitle > 0) {
-      updatedInfo = updatedInfo.copyWith(
-        subtitle: List<PlayerSubtitleStreamInfo>.generate(
-          event.tracks.subtitle,
-          (index) => PlayerSubtitleStreamInfo(
-            title: 'Subtitle ${index + 1}',
-            rawRepresentation: 'Kuroko Subtitle ${index + 1}',
-          ),
-        ),
-      );
+      _activeAudioTracks = <int>[
+        for (var i = 0; i < audioInfos.length; i++)
+          if (audioInfos[i].selected) i,
+      ];
+      _activeSubtitleTracks = <int>[
+        for (var i = 0; i < subtitleInfos.length; i++)
+          if (subtitleInfos[i].selected) i,
+      ];
     }
     _mediaInfo = updatedInfo;
   }

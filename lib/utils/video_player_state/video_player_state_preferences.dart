@@ -229,6 +229,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
     _danmakuOpacity = opacity;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_danmakuOpacityKey, opacity);
+    _syncKurokoDanmakuConfig();
     _notifyListeners();
   }
 
@@ -250,6 +251,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
       _danmakuVisible = visible;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_danmakuVisibleKey, visible);
+      _syncKurokoDanmakuConfig();
       _notifyListeners();
     }
   }
@@ -1193,6 +1195,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
       _danmakuFontSize = fontSize;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble(_danmakuFontSizeKey, fontSize);
+      _syncKurokoDanmakuConfig();
       _notifyListeners();
     }
   }
@@ -2057,6 +2060,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
       _danmakuDisplayArea = area;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble(_danmakuDisplayAreaKey, area);
+      _syncKurokoDanmakuConfig();
       _notifyListeners();
     }
   }
