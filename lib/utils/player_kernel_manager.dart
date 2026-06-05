@@ -108,8 +108,10 @@ class PlayerKernelManager {
     // 重新创建弹幕控制器
     videoPlayerState.danmakuController = _createDanmakuController(newKernel);
 
-    // 重新加载当前弹幕数据
-    if (videoPlayerState.danmakuList.isNotEmpty) {
+    // 重新加载当前弹幕数据（Kuroko 内核下弹幕由播放内核原生渲染，
+    // 不把数据喂回 Flutter 弹幕控制器，避免双画）
+    if (videoPlayerState.danmakuList.isNotEmpty &&
+        !videoPlayerState.isNativeDanmakuActive) {
       videoPlayerState.danmakuController
           ?.loadDanmaku(videoPlayerState.danmakuList);
       debugPrint(

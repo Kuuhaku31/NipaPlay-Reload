@@ -352,6 +352,12 @@ class Player {
     double? fontSize,
     double? displayArea,
     bool? mergeDuplicates,
+    bool? allowStacking,
+    double? scrollDurationSeconds,
+    double? trackGapRatio,
+    double? outlineWidth,
+    String? customFontFamily,
+    String? customFontFilePath,
   }) async {
     try {
       final r = (_delegate as dynamic).setDanmakuConfig(
@@ -360,6 +366,12 @@ class Player {
         fontSize: fontSize,
         displayArea: displayArea,
         mergeDuplicates: mergeDuplicates,
+        allowStacking: allowStacking,
+        scrollDurationSeconds: scrollDurationSeconds,
+        trackGapRatio: trackGapRatio,
+        outlineWidth: outlineWidth,
+        customFontFamily: customFontFamily,
+        customFontFilePath: customFontFilePath,
       );
       if (r is Future) await r;
     } catch (_) {}

@@ -41,17 +41,33 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     }
   }
 
+  // True when the active player kernel renders danmaku natively (Kuroko).
+  // Public so the kernel hot-swap path can keep the Flutter overlay disabled.
+  bool get isNativeDanmakuActive => _kurokoNativeDanmaku;
+
   // Push the current danmaku display settings down to the native kernel.
-  // NipaPlay already merges + block-filters the fed list, so the kernel only
-  // owns layout/render (mergeDuplicates disabled here).
+  // NipaPlay only does spoiler/block pre-filtering before feeding the list;
+  // Kuroko's DFM+ owns merge, density, stacking and track layout, so the
+  // matching settings are forwarded here.
   void _syncKurokoDanmakuConfig() {
     if (!_kurokoNativeDanmaku) return;
+    final fontFamily = danmakuFontFamily.isNotEmpty ? danmakuFontFamily : null;
+    final fontPath =
+        danmakuFontFilePath.isNotEmpty ? danmakuFontFilePath : null;
     unawaited(player.setNativeDanmakuConfig(
       enabled: _danmakuVisible,
       opacity: _danmakuOpacity,
       fontSize: _danmakuFontSize > 0 ? _danmakuFontSize : null,
       displayArea: _danmakuDisplayArea,
-      mergeDuplicates: false,
+      mergeDuplicates: _mergeDanmaku,
+      allowStacking: _danmakuStacking,
+      // danmakuScrollDurationSeconds already folds in the speed multiplier,
+      // so the scroll-speed factor is left at the engine default.
+      scrollDurationSeconds: danmakuScrollDurationSeconds,
+      trackGapRatio: _danmakuDfmPlusTrackGap,
+      outlineWidth: _next2DanmakuOutlineWidth,
+      customFontFamily: fontFamily,
+      customFontFilePath: fontPath,
     ));
   }
 
@@ -284,8 +300,11 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
           return;
         }
 
-        // 加载弹幕到控制器
-        danmakuController?.loadDanmaku(cachedDanmaku);
+        // 加载弹幕到控制器（Kuroko 原生弹幕由 _updateMergedDanmakuList 喂入，
+        // 此处不喂 Flutter 控制器，避免双画）
+        if (!_kurokoNativeDanmaku) {
+          danmakuController?.loadDanmaku(cachedDanmaku);
+        }
         _setStatus(PlayerStatus.playing,
             message: '从缓存加载弹幕完成 (${cachedDanmaku.length}条)');
 
@@ -347,11 +366,14 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
       if (danmakuData['comments'] != null && danmakuData['comments'] is List) {
         debugPrint('成功从网络加载弹幕，共${danmakuData['count']}条');
 
-        // 加载弹幕到控制器
+        // 加载弹幕到控制器（Kuroko 原生弹幕由 _updateMergedDanmakuList 喂入，
+        // 此处不喂 Flutter 控制器，避免双画）
         final filteredDanmaku = danmakuData['comments']
             .where((d) => !shouldBlockDanmaku(d))
             .toList();
-        danmakuController?.loadDanmaku(filteredDanmaku);
+        if (!_kurokoNativeDanmaku) {
+          danmakuController?.loadDanmaku(filteredDanmaku);
+        }
 
         // 解析弹幕数据并添加到弹弹play轨道
         final parsedDanmaku = await compute(parseDanmakuListInBackground,
