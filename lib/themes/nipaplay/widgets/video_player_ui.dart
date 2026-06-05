@@ -92,6 +92,11 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
   }
 
   Widget _buildDanmakuOverlay(VideoPlayerState videoState) {
+    // When the player kernel (Kuroko) renders danmaku natively, suppress the
+    // Flutter danmaku overlay entirely to avoid drawing two layers.
+    if (videoState.isNativeDanmakuActive) {
+      return const SizedBox.shrink();
+    }
     final isNextKernel = DanmakuKernelFactory.getKernelType() ==
         DanmakuRenderEngine.nipaplayNext;
     return ValueListenableBuilder<double>(

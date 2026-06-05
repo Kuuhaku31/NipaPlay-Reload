@@ -57,7 +57,9 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     unawaited(player.setNativeDanmakuConfig(
       enabled: _danmakuVisible,
       opacity: _danmakuOpacity,
-      fontSize: _danmakuFontSize > 0 ? _danmakuFontSize : null,
+      // actualDanmakuFontSize resolves the "0 = default" sentinel to the real
+      // pixel size NipaPlay renders at (30 on desktop), so Kuroko matches.
+      fontSize: actualDanmakuFontSize,
       displayArea: _danmakuDisplayArea,
       mergeDuplicates: _mergeDanmaku,
       allowStacking: _danmakuStacking,
