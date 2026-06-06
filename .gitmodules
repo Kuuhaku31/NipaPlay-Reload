@@ -13,3 +13,4 @@
 [submodule "third_party/kuroko"]
 	path = third_party/kuroko
 	url = https://github.com/AimesSoft/Kuroko.git
+	branch = main
