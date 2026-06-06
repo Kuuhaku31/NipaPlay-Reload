@@ -189,7 +189,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   PlayerPlaybackState _state = PlayerPlaybackState.stopped;
   PlayerMediaInfo _mediaInfo = PlayerMediaInfo(duration: 0);
   String _media = '';
-  double _volume = 100.0;
+  double _volume = 1.0;
   double _playbackRate = 1.0;
   int _lastPositionMs = 0;
   DateTime _lastPositionUpdate = DateTime.now();
@@ -223,7 +223,10 @@ class KurokoPlayerAdapter implements AbstractPlayer {
 
   @override
   set volume(double value) {
-    _volume = value.clamp(0.0, 100.0).toDouble();
+    _volume = value.clamp(0.0, 1.0).toDouble();
+    if (_isSupported) {
+      unawaited(_player.setVolume(_volume));
+    }
   }
 
   @override
