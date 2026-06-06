@@ -1190,13 +1190,18 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
   }
 
   // 设置弹幕字体大小
-  Future<void> setDanmakuFontSize(double fontSize) async {
+  Future<void> setDanmakuFontSize(
+    double fontSize, {
+    bool commit = false,
+  }) async {
     if (_danmakuFontSize != fontSize) {
       _danmakuFontSize = fontSize;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble(_danmakuFontSizeKey, fontSize);
+      _scheduleDanmakuFontSizePersistence(immediate: commit);
       _syncKurokoDanmakuConfig();
       _notifyListeners();
+    } else if (commit) {
+      _scheduleDanmakuFontSizePersistence(immediate: true);
+      _syncKurokoDanmakuConfig();
     }
   }
 

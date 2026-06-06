@@ -10,6 +10,159 @@ import './abstract_player.dart';
 import './player_data_models.dart';
 import './player_enums.dart';
 
+class _KurokoDanmakuConfigPatch {
+  _KurokoDanmakuConfigPatch({
+    this.enabled,
+    this.fontSize,
+    this.opacity,
+    this.displayArea,
+    this.scrollDurationSeconds,
+    this.scrollSpeedFactor,
+    this.trackGapRatio,
+    this.outlineWidth,
+    this.shadowStyle,
+    this.customFontFamily,
+    this.customFontFilePath,
+    this.mergeDuplicates,
+    this.allowStacking,
+    this.maxQuantity,
+    this.maxLinesPerMode,
+    this.blockTop,
+    this.blockBottom,
+    this.blockScroll,
+    List<String>? blockWords,
+  }) : blockWords =
+            blockWords == null ? null : List<String>.unmodifiable(blockWords);
+
+  final bool? enabled;
+  final double? fontSize;
+  final double? opacity;
+  final double? displayArea;
+  final double? scrollDurationSeconds;
+  final double? scrollSpeedFactor;
+  final double? trackGapRatio;
+  final double? outlineWidth;
+  final int? shadowStyle;
+  final String? customFontFamily;
+  final String? customFontFilePath;
+  final bool? mergeDuplicates;
+  final bool? allowStacking;
+  final int? maxQuantity;
+  final int? maxLinesPerMode;
+  final bool? blockTop;
+  final bool? blockBottom;
+  final bool? blockScroll;
+  final List<String>? blockWords;
+
+  bool get isEmpty =>
+      enabled == null &&
+      fontSize == null &&
+      opacity == null &&
+      displayArea == null &&
+      scrollDurationSeconds == null &&
+      scrollSpeedFactor == null &&
+      trackGapRatio == null &&
+      outlineWidth == null &&
+      shadowStyle == null &&
+      customFontFamily == null &&
+      customFontFilePath == null &&
+      mergeDuplicates == null &&
+      allowStacking == null &&
+      maxQuantity == null &&
+      maxLinesPerMode == null &&
+      blockTop == null &&
+      blockBottom == null &&
+      blockScroll == null &&
+      blockWords == null;
+
+  _KurokoDanmakuConfigPatch merge(_KurokoDanmakuConfigPatch other) {
+    return _KurokoDanmakuConfigPatch(
+      enabled: other.enabled ?? enabled,
+      fontSize: other.fontSize ?? fontSize,
+      opacity: other.opacity ?? opacity,
+      displayArea: other.displayArea ?? displayArea,
+      scrollDurationSeconds:
+          other.scrollDurationSeconds ?? scrollDurationSeconds,
+      scrollSpeedFactor: other.scrollSpeedFactor ?? scrollSpeedFactor,
+      trackGapRatio: other.trackGapRatio ?? trackGapRatio,
+      outlineWidth: other.outlineWidth ?? outlineWidth,
+      shadowStyle: other.shadowStyle ?? shadowStyle,
+      customFontFamily: other.customFontFamily ?? customFontFamily,
+      customFontFilePath: other.customFontFilePath ?? customFontFilePath,
+      mergeDuplicates: other.mergeDuplicates ?? mergeDuplicates,
+      allowStacking: other.allowStacking ?? allowStacking,
+      maxQuantity: other.maxQuantity ?? maxQuantity,
+      maxLinesPerMode: other.maxLinesPerMode ?? maxLinesPerMode,
+      blockTop: other.blockTop ?? blockTop,
+      blockBottom: other.blockBottom ?? blockBottom,
+      blockScroll: other.blockScroll ?? blockScroll,
+      blockWords: other.blockWords ?? blockWords,
+    );
+  }
+
+  _KurokoDanmakuConfigPatch differenceFrom(
+    _KurokoDanmakuConfigPatch? previous,
+  ) {
+    return _KurokoDanmakuConfigPatch(
+      enabled: _changed(enabled, previous?.enabled) ? enabled : null,
+      fontSize: _changed(fontSize, previous?.fontSize) ? fontSize : null,
+      opacity: _changed(opacity, previous?.opacity) ? opacity : null,
+      displayArea:
+          _changed(displayArea, previous?.displayArea) ? displayArea : null,
+      scrollDurationSeconds: _changed(
+        scrollDurationSeconds,
+        previous?.scrollDurationSeconds,
+      )
+          ? scrollDurationSeconds
+          : null,
+      scrollSpeedFactor: _changed(
+        scrollSpeedFactor,
+        previous?.scrollSpeedFactor,
+      )
+          ? scrollSpeedFactor
+          : null,
+      trackGapRatio: _changed(trackGapRatio, previous?.trackGapRatio)
+          ? trackGapRatio
+          : null,
+      outlineWidth:
+          _changed(outlineWidth, previous?.outlineWidth) ? outlineWidth : null,
+      shadowStyle:
+          _changed(shadowStyle, previous?.shadowStyle) ? shadowStyle : null,
+      customFontFamily: _changed(customFontFamily, previous?.customFontFamily)
+          ? customFontFamily
+          : null,
+      customFontFilePath:
+          _changed(customFontFilePath, previous?.customFontFilePath)
+              ? customFontFilePath
+              : null,
+      mergeDuplicates: _changed(mergeDuplicates, previous?.mergeDuplicates)
+          ? mergeDuplicates
+          : null,
+      allowStacking: _changed(allowStacking, previous?.allowStacking)
+          ? allowStacking
+          : null,
+      maxQuantity:
+          _changed(maxQuantity, previous?.maxQuantity) ? maxQuantity : null,
+      maxLinesPerMode: _changed(maxLinesPerMode, previous?.maxLinesPerMode)
+          ? maxLinesPerMode
+          : null,
+      blockTop: _changed(blockTop, previous?.blockTop) ? blockTop : null,
+      blockBottom:
+          _changed(blockBottom, previous?.blockBottom) ? blockBottom : null,
+      blockScroll:
+          _changed(blockScroll, previous?.blockScroll) ? blockScroll : null,
+      blockWords:
+          _changedList(blockWords, previous?.blockWords) ? blockWords : null,
+    );
+  }
+
+  static bool _changed<T>(T? value, T? previous) =>
+      value != null && value != previous;
+
+  static bool _changedList(List<String>? value, List<String>? previous) =>
+      value != null && !listEquals(value, previous);
+}
+
 class KurokoPlayerAdapter implements AbstractPlayer {
   KurokoPlayerAdapter() {
     if (_isSupported) {
@@ -43,6 +196,15 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   int? _pendingSeekTargetMs;
   DateTime? _seekFenceUntil;
   bool _disposed = false;
+
+  static const Duration _danmakuConfigCoalesceDelay =
+      Duration(milliseconds: 50);
+  Timer? _danmakuConfigTimer;
+  bool _danmakuConfigInFlight = false;
+  _KurokoDanmakuConfigPatch? _pendingDanmakuConfig;
+  _KurokoDanmakuConfigPatch? _lastAppliedDanmakuConfig;
+  final List<Completer<void>> _pendingDanmakuConfigCompleters =
+      <Completer<void>>[];
 
   // Real Kuroko track descriptors, kept so the UI's index-based
   // activeAudioTracks/activeSubtitleTracks can be mapped back to native ids.
@@ -207,6 +369,15 @@ class KurokoPlayerAdapter implements AbstractPlayer {
       return;
     }
     _disposed = true;
+    _danmakuConfigTimer?.cancel();
+    _danmakuConfigTimer = null;
+    for (final completer in _pendingDanmakuConfigCompleters) {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    }
+    _pendingDanmakuConfigCompleters.clear();
+    _pendingDanmakuConfig = null;
     unawaited(_eventSubscription?.cancel());
     _eventSubscription = null;
     unawaited(_player.dispose());
@@ -338,10 +509,10 @@ class KurokoPlayerAdapter implements AbstractPlayer {
     bool? blockScroll,
     List<String>? blockWords,
   }) async {
-    if (!_isSupported) {
+    if (!_isSupported || _disposed) {
       return;
     }
-    await _player.setDanmakuConfig(
+    final patch = _KurokoDanmakuConfigPatch(
       enabled: enabled,
       fontSize: fontSize,
       opacity: opacity,
@@ -362,6 +533,99 @@ class KurokoPlayerAdapter implements AbstractPlayer {
       blockScroll: blockScroll,
       blockWords: blockWords,
     );
+    if (patch.isEmpty) {
+      return;
+    }
+
+    final completer = Completer<void>();
+    _pendingDanmakuConfig = _pendingDanmakuConfig?.merge(patch) ?? patch;
+    _pendingDanmakuConfigCompleters.add(completer);
+    _scheduleDanmakuConfigFlush();
+    return completer.future;
+  }
+
+  void _scheduleDanmakuConfigFlush() {
+    if (_disposed || _danmakuConfigInFlight || _danmakuConfigTimer != null) {
+      return;
+    }
+    _danmakuConfigTimer = Timer(_danmakuConfigCoalesceDelay, () {
+      _danmakuConfigTimer = null;
+      unawaited(_flushDanmakuConfig());
+    });
+  }
+
+  Future<void> _flushDanmakuConfig() async {
+    if (_disposed || _danmakuConfigInFlight) {
+      return;
+    }
+
+    final requestedPatch = _pendingDanmakuConfig;
+    if (requestedPatch == null) {
+      return;
+    }
+    final completers = List<Completer<void>>.from(
+      _pendingDanmakuConfigCompleters,
+    );
+    _pendingDanmakuConfigCompleters.clear();
+    _pendingDanmakuConfig = null;
+
+    final outgoingPatch = requestedPatch.differenceFrom(
+      _lastAppliedDanmakuConfig,
+    );
+    if (outgoingPatch.isEmpty) {
+      for (final completer in completers) {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }
+      if (_pendingDanmakuConfig != null) {
+        _scheduleDanmakuConfigFlush();
+      }
+      return;
+    }
+
+    _danmakuConfigInFlight = true;
+    try {
+      await _player.setDanmakuConfig(
+        enabled: outgoingPatch.enabled,
+        fontSize: outgoingPatch.fontSize,
+        opacity: outgoingPatch.opacity,
+        displayArea: outgoingPatch.displayArea,
+        scrollDurationSeconds: outgoingPatch.scrollDurationSeconds,
+        scrollSpeedFactor: outgoingPatch.scrollSpeedFactor,
+        trackGapRatio: outgoingPatch.trackGapRatio,
+        outlineWidth: outgoingPatch.outlineWidth,
+        shadowStyle: outgoingPatch.shadowStyle,
+        customFontFamily: outgoingPatch.customFontFamily,
+        customFontFilePath: outgoingPatch.customFontFilePath,
+        mergeDuplicates: outgoingPatch.mergeDuplicates,
+        allowStacking: outgoingPatch.allowStacking,
+        maxQuantity: outgoingPatch.maxQuantity,
+        maxLinesPerMode: outgoingPatch.maxLinesPerMode,
+        blockTop: outgoingPatch.blockTop,
+        blockBottom: outgoingPatch.blockBottom,
+        blockScroll: outgoingPatch.blockScroll,
+        blockWords: outgoingPatch.blockWords,
+      );
+      _lastAppliedDanmakuConfig =
+          _lastAppliedDanmakuConfig?.merge(requestedPatch) ?? requestedPatch;
+      for (final completer in completers) {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }
+    } catch (error, stackTrace) {
+      for (final completer in completers) {
+        if (!completer.isCompleted) {
+          completer.completeError(error, stackTrace);
+        }
+      }
+    } finally {
+      _danmakuConfigInFlight = false;
+      if (_pendingDanmakuConfig != null) {
+        _scheduleDanmakuConfigFlush();
+      }
+    }
   }
 
   Map<String, dynamic> getDetailedMediaInfo() {
