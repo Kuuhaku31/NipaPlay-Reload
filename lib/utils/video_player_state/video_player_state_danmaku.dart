@@ -57,8 +57,9 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     unawaited(player.setNativeDanmakuConfig(
       enabled: _danmakuVisible,
       opacity: _danmakuOpacity,
-      // actualDanmakuFontSize resolves the "0 = default" sentinel to the real
-      // pixel size NipaPlay renders at (30 on desktop), so Kuroko matches.
+      // actualDanmakuFontSize resolves the "0 = default" sentinel to the same
+      // logical font size used by NipaPlay's DFM+ path; Kuroko uses the same
+      // default danmaku font and applies surface scale internally.
       fontSize: actualDanmakuFontSize,
       displayArea: _danmakuDisplayArea,
       mergeDuplicates: _mergeDanmaku,
