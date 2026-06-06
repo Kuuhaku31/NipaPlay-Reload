@@ -40,6 +40,8 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   double _playbackRate = 1.0;
   int _lastPositionMs = 0;
   DateTime _lastPositionUpdate = DateTime.now();
+  int? _pendingSeekTargetMs;
+  DateTime? _seekFenceUntil;
   bool _disposed = false;
 
   // Real Kuroko track descriptors, kept so the UI's index-based
@@ -194,6 +196,8 @@ class KurokoPlayerAdapter implements AbstractPlayer {
     final clamped = position < 0 ? 0 : position;
     _lastPositionMs = clamped;
     _lastPositionUpdate = DateTime.now();
+    _pendingSeekTargetMs = clamped;
+    _seekFenceUntil = DateTime.now().add(const Duration(milliseconds: 1500));
     unawaited(_player.seek(Duration(milliseconds: clamped)));
   }
 
@@ -397,8 +401,25 @@ class KurokoPlayerAdapter implements AbstractPlayer {
     }
 
     if (event.position >= Duration.zero) {
-      _lastPositionMs = event.position.inMilliseconds;
-      _lastPositionUpdate = DateTime.now();
+      final eventPositionMs = event.position.inMilliseconds;
+      final now = DateTime.now();
+      final seekTarget = _pendingSeekTargetMs;
+      final fenceUntil = _seekFenceUntil;
+      if (seekTarget != null &&
+          fenceUntil != null &&
+          now.isBefore(fenceUntil)) {
+        final distance = (eventPositionMs - seekTarget).abs();
+        if (distance > 1500) {
+          return;
+        }
+        _pendingSeekTargetMs = null;
+        _seekFenceUntil = null;
+      } else if (fenceUntil != null && !now.isBefore(fenceUntil)) {
+        _pendingSeekTargetMs = null;
+        _seekFenceUntil = null;
+      }
+      _lastPositionMs = eventPositionMs;
+      _lastPositionUpdate = now;
     }
 
     var updatedInfo = _mediaInfo;
