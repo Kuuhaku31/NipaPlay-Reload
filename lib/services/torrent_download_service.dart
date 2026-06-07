@@ -235,9 +235,15 @@ class TorrentDownloadService {
     }
   }
 
-  Future<void> addTorrentFile(String torrentFilePath) async {
-    final downloadDir = await getDownloadDirectory();
-    final createFolder = await _createFolderForTask();
+  Future<void> addTorrentFile(
+    String torrentFilePath, {
+    String? downloadDirectory,
+    bool? createFolderForTask,
+  }) async {
+    final downloadDir = await _resolveDownloadDirectoryForAction(
+      downloadDirectory,
+    );
+    final createFolder = createFolderForTask ?? await _createFolderForTask();
     _log(
       'addTorrentFile start: path="$torrentFilePath", '
       'downloadDir="$downloadDir", createFolderForTask=$createFolder',

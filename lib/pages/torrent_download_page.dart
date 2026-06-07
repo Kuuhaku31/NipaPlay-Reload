@@ -56,6 +56,9 @@ class _TorrentDownloadPageState extends State<TorrentDownloadPage>
   final Map<String, TorrentTaskScanSummary> _scanSummaries =
       <String, TorrentTaskScanSummary>{};
   final Set<String> _scanSummaryCheckedKeys = <String>{};
+  bool _isLoadingScanSummaries = false;
+  List<TorrentTask>? _pendingScanSummaryTasks;
+  bool _pendingScanSummaryForce = false;
   String _downloadDirectory = '';
   bool _isLoading = true;
   bool _isBusy = false;
@@ -237,9 +240,34 @@ class _TorrentDownloadPageState extends State<TorrentDownloadPage>
     );
     if (file == null) return;
 
+    final initialDirectory = _downloadDirectory.trim().isEmpty
+        ? await _service.getDownloadDirectory()
+        : _downloadDirectory;
+    if (!mounted) return;
+    final selectedDirectory = await FilePickerService().pickDirectory(
+      initialDirectory: initialDirectory,
+    );
+    if (selectedDirectory == null || selectedDirectory.trim().isEmpty) return;
+    if (!mounted) return;
+
+    final downloadDirectory = selectedDirectory.trim();
+    final downloaderSettings = context.read<DownloaderSettingsProvider>();
     await _runBusyAction(
-      action: () => _service.addTorrentFile(file.path),
+      action: () async {
+        await _service.setDownloadDirectory(downloadDirectory);
+        await _service.addTorrentFile(
+          file.path,
+          downloadDirectory: downloadDirectory,
+          createFolderForTask: downloaderSettings.createFolderForTask,
+        );
+      },
       successMessage: '已添加 ${p.basename(file.path)}',
+      afterSuccess: () {
+        if (!mounted) return;
+        setState(() {
+          _downloadDirectory = downloadDirectory;
+        });
+      },
     );
   }
 
@@ -345,6 +373,38 @@ class _TorrentDownloadPageState extends State<TorrentDownloadPage>
   Future<void> _loadScanSummariesForTasks(
     List<TorrentTask> tasks, {
     bool force = false,
+  }) async {
+    if (_isLoadingScanSummaries) {
+      _pendingScanSummaryTasks = tasks;
+      _pendingScanSummaryForce = _pendingScanSummaryForce || force;
+      return;
+    }
+
+    _isLoadingScanSummaries = true;
+    var currentTasks = tasks;
+    var currentForce = force;
+    try {
+      while (true) {
+        await _loadScanSummariesForTasksBatch(
+          currentTasks,
+          force: currentForce,
+        );
+
+        final pendingTasks = _pendingScanSummaryTasks;
+        if (pendingTasks == null) break;
+        currentTasks = pendingTasks;
+        currentForce = _pendingScanSummaryForce;
+        _pendingScanSummaryTasks = null;
+        _pendingScanSummaryForce = false;
+      }
+    } finally {
+      _isLoadingScanSummaries = false;
+    }
+  }
+
+  Future<void> _loadScanSummariesForTasksBatch(
+    List<TorrentTask> tasks, {
+    required bool force,
   }) async {
     final targets = tasks.where((task) {
       if (!task.finished || task.outputFolder.trim().isEmpty) return false;
@@ -910,6 +970,7 @@ class _AddMagnetDialogState extends State<_AddMagnetDialog> {
   TorrentMagnetPreview? _preview;
   String? _error;
   bool _isPreviewing = false;
+  int _previewRequestId = 0;
 
   @override
   void initState() {
@@ -958,6 +1019,7 @@ class _AddMagnetDialogState extends State<_AddMagnetDialog> {
 
   Future<void> _previewMagnet() async {
     final magnet = _magnetController.text.trim();
+    final downloadDirectory = _downloadDirectory.trim();
     if (magnet.isEmpty) {
       setState(() => _error = '请输入 magnet 链接');
       return;
@@ -966,11 +1028,12 @@ class _AddMagnetDialogState extends State<_AddMagnetDialog> {
       setState(() => _error = '链接格式不是有效的 magnet 地址');
       return;
     }
-    if (_downloadDirectory.trim().isEmpty) {
+    if (downloadDirectory.isEmpty) {
       setState(() => _error = '请选择下载位置');
       return;
     }
 
+    final requestId = ++_previewRequestId;
     setState(() {
       _isPreviewing = true;
       _error = null;
@@ -979,19 +1042,25 @@ class _AddMagnetDialogState extends State<_AddMagnetDialog> {
     try {
       final preview = await widget.service.previewMagnet(
         magnet,
-        downloadDirectory: _downloadDirectory,
+        downloadDirectory: downloadDirectory,
       );
       if (!mounted) return;
+      if (!_isCurrentPreviewRequest(requestId, magnet, downloadDirectory)) {
+        return;
+      }
       setState(() {
         _preview = preview;
       });
     } catch (error) {
       if (!mounted) return;
+      if (!_isCurrentPreviewRequest(requestId, magnet, downloadDirectory)) {
+        return;
+      }
       setState(() {
         _error = '解析失败: $error';
       });
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _previewRequestId) {
         setState(() {
           _isPreviewing = false;
         });
@@ -999,15 +1068,26 @@ class _AddMagnetDialogState extends State<_AddMagnetDialog> {
     }
   }
 
+  bool _isCurrentPreviewRequest(
+    int requestId,
+    String magnet,
+    String downloadDirectory,
+  ) {
+    return requestId == _previewRequestId &&
+        _magnetController.text.trim() == magnet &&
+        _downloadDirectory.trim() == downloadDirectory;
+  }
+
   void _confirm() {
     final magnet = _magnetController.text.trim();
-    if (_preview == null || magnet.isEmpty || _downloadDirectory.isEmpty) {
+    final downloadDirectory = _downloadDirectory.trim();
+    if (_preview == null || magnet.isEmpty || downloadDirectory.isEmpty) {
       return;
     }
     Navigator.of(context).pop(
       _AddMagnetDialogResult(
         magnetUri: magnet,
-        downloadDirectory: _downloadDirectory,
+        downloadDirectory: downloadDirectory,
         createFolderForTask: _createFolderForTask,
       ),
     );
