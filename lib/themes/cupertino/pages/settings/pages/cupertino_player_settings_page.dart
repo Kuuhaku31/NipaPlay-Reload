@@ -401,7 +401,7 @@ class _CupertinoPlayerSettingsPageState
         .where(
           (kernel) =>
               kernel != PlayerKernelType.erika ||
-              (!kIsWeb && (Platform.isIOS || Platform.isMacOS)),
+              PlayerFactory.isErikaKernelSupported,
         )
         .map(
           (kernel) => AdaptivePopupMenuItem<PlayerKernelType>(

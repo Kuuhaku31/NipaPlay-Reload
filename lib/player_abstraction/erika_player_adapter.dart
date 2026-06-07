@@ -244,6 +244,9 @@ class ErikaPlayerAdapter implements AbstractPlayer {
 
   @override
   set state(PlayerPlaybackState value) {
+    if (value == _state) {
+      return;
+    }
     switch (value) {
       case PlayerPlaybackState.playing:
         unawaited(playDirectly());
@@ -680,24 +683,28 @@ class ErikaPlayerAdapter implements AbstractPlayer {
       getDetailedMediaInfo();
 
   void _handleEvent(ErikaPlayerEvent event) {
-    switch (event.state) {
-      case ErikaPlaybackState.playing:
-        _state = PlayerPlaybackState.playing;
-        break;
-      case ErikaPlaybackState.paused:
-      case ErikaPlaybackState.ready:
-      case ErikaPlaybackState.opening:
-        _state = PlayerPlaybackState.paused;
-        break;
-      case ErikaPlaybackState.stopped:
-      case ErikaPlaybackState.closed:
-      case ErikaPlaybackState.idle:
-      case ErikaPlaybackState.error:
-        _state = PlayerPlaybackState.stopped;
-        break;
+    if (event.kind == ErikaEventKind.stateChanged ||
+        event.kind == ErikaEventKind.error) {
+      switch (event.state) {
+        case ErikaPlaybackState.playing:
+          _state = PlayerPlaybackState.playing;
+          break;
+        case ErikaPlaybackState.paused:
+        case ErikaPlaybackState.ready:
+        case ErikaPlaybackState.opening:
+          _state = PlayerPlaybackState.paused;
+          break;
+        case ErikaPlaybackState.stopped:
+        case ErikaPlaybackState.closed:
+        case ErikaPlaybackState.idle:
+        case ErikaPlaybackState.error:
+          _state = PlayerPlaybackState.stopped;
+          break;
+      }
     }
 
-    if (event.position >= Duration.zero) {
+    if (event.kind == ErikaEventKind.positionChanged &&
+        event.position >= Duration.zero) {
       final eventPositionMs = event.position.inMilliseconds;
       final now = DateTime.now();
       final seekTarget = _pendingSeekTargetMs;

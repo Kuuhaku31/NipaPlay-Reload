@@ -153,7 +153,7 @@ class PlayerKernelManager {
       return ['FVP', 'Media Kit', 'Video Player'];
     } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       // 桌面平台支持所有内核
-      if (Platform.isMacOS) {
+      if (PlayerFactory.isErikaKernelSupported) {
         kernels.add('Erika');
       }
       return kernels;

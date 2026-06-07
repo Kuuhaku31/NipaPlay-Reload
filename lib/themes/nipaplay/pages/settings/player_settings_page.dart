@@ -528,7 +528,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 description:
                     _getPlayerKernelDescription(PlayerKernelType.mediaKit),
               ),
-              if (!kIsWeb && (Platform.isIOS || Platform.isMacOS))
+              if (PlayerFactory.isErikaKernelSupported)
                 DropdownMenuItemData(
                   title: "Erika",
                   value: PlayerKernelType.erika,

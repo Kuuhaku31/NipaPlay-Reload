@@ -39,6 +39,12 @@ class PlayerFactory {
   static Stream<PlayerKernelType> get onKernelChanged =>
       _kernelChangeController.stream;
 
+  static bool get isErikaKernelSupported {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
   // 初始化方法，在应用启动时调用
   static Future<void> initialize() async {
     if (kIsWeb) {

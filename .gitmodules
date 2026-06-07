@@ -12,5 +12,5 @@
 	url = https://github.com/AimesSoft/libplacebo.git
 [submodule "third_party/erika"]
 	path = third_party/erika
-	url = https://github.com/AimesSoft/Kuroko.git
+	url = https://github.com/AimesSoft/Erika.git
 	branch = main
