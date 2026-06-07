@@ -19,7 +19,7 @@ import './player_factory.dart'; // Import PlayerFactory directly
 import './mdk_player_adapter.dart'; // 导入具体适配器类
 import './video_player_adapter.dart'; // 导入具体适配器类
 import './media_kit_player_adapter.dart'; // 导入MediaKit适配器类
-import './kuroko_player_adapter.dart';
+import './erika_player_adapter.dart';
 
 /// MDK-compatible PlaybackState.
 /// Code using the abstraction layer can use `PlaybackState.paused`.
@@ -273,8 +273,8 @@ class Player {
       return "Video Player";
     } else if (_delegate is MediaKitPlayerAdapter) {
       return "Media Kit";
-    } else if (_delegate is KurokoPlayerAdapter) {
-      return "Kuroko";
+    } else if (_delegate is ErikaPlayerAdapter) {
+      return "Erika";
     } else {
       return "未知";
     }
@@ -319,7 +319,7 @@ class Player {
   }
 
   // ---- Native danmaku passthrough ----
-  // Some kernels (Kuroko) composite danmaku into the video frame natively.
+  // Some kernels (Erika) composite danmaku into the video frame natively.
   // These forward to the delegate via dynamic dispatch so the abstraction
   // layer does not need to depend on a concrete adapter type.
 

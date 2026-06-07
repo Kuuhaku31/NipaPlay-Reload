@@ -292,8 +292,8 @@ class _CupertinoPlayerSettingsPageState
         return 'Video Player';
       case PlayerKernelType.mediaKit:
         return 'Libmpv';
-      case PlayerKernelType.kuroko:
-        return 'Kuroko';
+      case PlayerKernelType.erika:
+        return 'Erika';
     }
   }
 
@@ -305,8 +305,8 @@ class _CupertinoPlayerSettingsPageState
         return context.l10n.playerKernelDescriptionVideoPlayer;
       case PlayerKernelType.mediaKit:
         return context.l10n.playerKernelDescriptionLibmpv;
-      case PlayerKernelType.kuroko:
-        return 'Kuroko Rust 播放器（实验性）：macOS 原生 Metal 输出，播放、渲染和音频由 Rust 内核负责。';
+      case PlayerKernelType.erika:
+        return 'Erika Rust 播放器（实验性）：iOS/macOS 原生 Metal 输出，播放、渲染和音频由 Rust 内核负责。';
     }
   }
 
@@ -400,8 +400,8 @@ class _CupertinoPlayerSettingsPageState
     return PlayerKernelType.values
         .where(
           (kernel) =>
-              kernel != PlayerKernelType.kuroko ||
-              (!kIsWeb && Platform.isMacOS),
+              kernel != PlayerKernelType.erika ||
+              (!kIsWeb && (Platform.isIOS || Platform.isMacOS)),
         )
         .map(
           (kernel) => AdaptivePopupMenuItem<PlayerKernelType>(
@@ -868,8 +868,11 @@ class _CupertinoPlayerSettingsPageState
                   ),
                 ],
                 buttonStyle: PopupButtonStyle.gray,
-                child: _buildMenuChip(context,
-                    _androidAudioOutput == 'audiotrack' ? 'AudioTrack' : 'OpenSL ES'),
+                child: _buildMenuChip(
+                    context,
+                    _androidAudioOutput == 'audiotrack'
+                        ? 'AudioTrack'
+                        : 'OpenSL ES'),
                 onSelected: (index, entry) {
                   final output = entry.value!;
                   if (output != _androidAudioOutput) {

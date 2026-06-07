@@ -3,8 +3,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CPP_NATIVE_DIR="$(dirname "$SCRIPT_DIR")"
 NIPAPLAY_ROOT="$(cd "${CPP_NATIVE_DIR}/.." && pwd)"
-KUROKO_ROOT="${KUROKO_ROOT:-${NIPAPLAY_ROOT}/third_party/kuroko}"
-KUROKO_NATIVE_PROFILE="${KUROKO_NATIVE_PROFILE:-lgpl}"
+ERIKA_ROOT="${ERIKA_ROOT:-${NIPAPLAY_ROOT}/third_party/erika}"
+ERIKA_NATIVE_PROFILE="${ERIKA_NATIVE_PROFILE:-lgpl}"
 HOST_JOBS="$(sysctl -n hw.ncpu)"
 
 # Xcode Run Script 阶段的 PATH 不会继承 shell 配置，显式补上 Homebrew 路径
@@ -27,44 +27,44 @@ cmake -S "${CPP_NATIVE_DIR}" -B "${BUILD_DIR}" \
 
 cmake --build "${BUILD_DIR}" -j"${HOST_JOBS}"
 
-if [ ! -f "${KUROKO_ROOT}/Cargo.toml" ]; then
-    echo "error: Kuroko source not found at ${KUROKO_ROOT}. Run git submodule update --init third_party/kuroko." >&2
+if [ ! -f "${ERIKA_ROOT}/Cargo.toml" ]; then
+    echo "error: Erika source not found at ${ERIKA_ROOT}. Run git submodule update --init third_party/erika." >&2
     exit 1
 fi
 
 if [ "${CONFIGURATION}" = "Debug" ]; then
-    KUROKO_CARGO_PROFILE="debug"
-    KUROKO_CARGO_ARGS=()
+    ERIKA_CARGO_PROFILE="debug"
+    ERIKA_CARGO_ARGS=()
 else
-    KUROKO_CARGO_PROFILE="release"
-    KUROKO_CARGO_ARGS=(--release)
+    ERIKA_CARGO_PROFILE="release"
+    ERIKA_CARGO_ARGS=(--release)
 fi
 
-echo "Building Kuroko C API from ${KUROKO_ROOT} (${KUROKO_CARGO_PROFILE})"
-KUROKO_FFMPEG_HEADERS="${KUROKO_ROOT}/third_party/dist/${KUROKO_NATIVE_PROFILE}/ffmpeg/include/libavformat/avformat.h"
-if [ ! -f "${KUROKO_FFMPEG_HEADERS}" ]; then
-    echo "Kuroko native dependencies not found; building ${KUROKO_NATIVE_PROFILE} dependency profile"
-    (cd "${KUROKO_ROOT}" && cargo run -p xtask -- deps build --profile "${KUROKO_NATIVE_PROFILE}" --jobs "${HOST_JOBS}")
+echo "Building Erika C API from ${ERIKA_ROOT} (${ERIKA_CARGO_PROFILE})"
+ERIKA_FFMPEG_HEADERS="${ERIKA_ROOT}/third_party/dist/${ERIKA_NATIVE_PROFILE}/ffmpeg/include/libavformat/avformat.h"
+if [ ! -f "${ERIKA_FFMPEG_HEADERS}" ]; then
+    echo "Erika native dependencies not found; building ${ERIKA_NATIVE_PROFILE} dependency profile"
+    (cd "${ERIKA_ROOT}" && cargo run -p xtask -- deps build --profile "${ERIKA_NATIVE_PROFILE}" --jobs "${HOST_JOBS}")
 fi
 
-(cd "${KUROKO_ROOT}" && KUROKO_NATIVE_PROFILE="${KUROKO_NATIVE_PROFILE}" cargo build -p kuroko_capi "${KUROKO_CARGO_ARGS[@]}")
+(cd "${ERIKA_ROOT}" && ERIKA_NATIVE_PROFILE="${ERIKA_NATIVE_PROFILE}" cargo build -p erika_capi "${ERIKA_CARGO_ARGS[@]}")
 
 # 复制 dylib 到 Frameworks
 cp "${BUILD_DIR}/libnipaplay_native.dylib" \
     "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/"
 
-KUROKO_DYLIB="${KUROKO_ROOT}/target/${KUROKO_CARGO_PROFILE}/libkuroko_capi.dylib"
-KUROKO_BUNDLED_DYLIB="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libkuroko_capi.dylib"
-if [ ! -f "${KUROKO_DYLIB}" ]; then
-    echo "error: ${KUROKO_DYLIB} was not produced by Kuroko build." >&2
+ERIKA_DYLIB="${ERIKA_ROOT}/target/${ERIKA_CARGO_PROFILE}/liberika_capi.dylib"
+ERIKA_BUNDLED_DYLIB="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/liberika_capi.dylib"
+if [ ! -f "${ERIKA_DYLIB}" ]; then
+    echo "error: ${ERIKA_DYLIB} was not produced by Erika build." >&2
     exit 1
 fi
 
-cp "${KUROKO_DYLIB}" "${KUROKO_BUNDLED_DYLIB}"
-install_name_tool -id "@rpath/libkuroko_capi.dylib" "${KUROKO_BUNDLED_DYLIB}"
+cp "${ERIKA_DYLIB}" "${ERIKA_BUNDLED_DYLIB}"
+install_name_tool -id "@rpath/liberika_capi.dylib" "${ERIKA_BUNDLED_DYLIB}"
 
 # Code sign the dylib (required for macOS app notarization)
 codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" \
     "${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/libnipaplay_native.dylib"
 
-codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "${KUROKO_BUNDLED_DYLIB}"
+codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "${ERIKA_BUNDLED_DYLIB}"

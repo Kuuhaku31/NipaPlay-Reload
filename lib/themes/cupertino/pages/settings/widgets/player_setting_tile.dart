@@ -23,8 +23,8 @@ class _CupertinoPlayerSettingTileState
         return context.l10n.playerKernelCurrentVideoPlayer;
       case PlayerKernelType.mediaKit:
         return context.l10n.playerKernelCurrentLibmpv;
-      case PlayerKernelType.kuroko:
-        return '当前：Kuroko';
+      case PlayerKernelType.erika:
+        return '当前：Erika';
     }
   }
 

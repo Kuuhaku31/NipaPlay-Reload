@@ -4,14 +4,14 @@ import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show Widget;
-import 'package:kuroko_flutter/kuroko_flutter.dart';
+import 'package:erika_flutter/erika_flutter.dart';
 
 import './abstract_player.dart';
 import './player_data_models.dart';
 import './player_enums.dart';
 
-class _KurokoDanmakuConfigPatch {
-  _KurokoDanmakuConfigPatch({
+class _ErikaDanmakuConfigPatch {
+  _ErikaDanmakuConfigPatch({
     this.enabled,
     this.fontSize,
     this.opacity,
@@ -75,8 +75,8 @@ class _KurokoDanmakuConfigPatch {
       blockScroll == null &&
       blockWords == null;
 
-  _KurokoDanmakuConfigPatch merge(_KurokoDanmakuConfigPatch other) {
-    return _KurokoDanmakuConfigPatch(
+  _ErikaDanmakuConfigPatch merge(_ErikaDanmakuConfigPatch other) {
+    return _ErikaDanmakuConfigPatch(
       enabled: other.enabled ?? enabled,
       fontSize: other.fontSize ?? fontSize,
       opacity: other.opacity ?? opacity,
@@ -100,10 +100,10 @@ class _KurokoDanmakuConfigPatch {
     );
   }
 
-  _KurokoDanmakuConfigPatch differenceFrom(
-    _KurokoDanmakuConfigPatch? previous,
+  _ErikaDanmakuConfigPatch differenceFrom(
+    _ErikaDanmakuConfigPatch? previous,
   ) {
-    return _KurokoDanmakuConfigPatch(
+    return _ErikaDanmakuConfigPatch(
       enabled: _changed(enabled, previous?.enabled) ? enabled : null,
       fontSize: _changed(fontSize, previous?.fontSize) ? fontSize : null,
       opacity: _changed(opacity, previous?.opacity) ? opacity : null,
@@ -163,19 +163,19 @@ class _KurokoDanmakuConfigPatch {
       value != null && !listEquals(value, previous);
 }
 
-class KurokoPlayerAdapter implements AbstractPlayer {
-  KurokoPlayerAdapter() {
+class ErikaPlayerAdapter implements AbstractPlayer {
+  ErikaPlayerAdapter() {
     if (_isSupported) {
       _eventSubscription = _player.events.listen(
         _handleEvent,
         onError: (Object error, StackTrace stackTrace) {
-          debugPrint('KurokoPlayerAdapter event error: $error');
+          debugPrint('ErikaPlayerAdapter event error: $error');
         },
       );
     }
   }
 
-  final KurokoPlayer _player = KurokoPlayer();
+  final ErikaPlayer _player = ErikaPlayer();
   final ValueNotifier<int?> _textureIdNotifier = ValueNotifier<int?>(null);
   final Map<PlayerMediaType, List<String>> _decoders = {
     PlayerMediaType.video: const <String>[],
@@ -185,7 +185,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   };
   final Map<String, String> _properties = <String, String>{};
 
-  StreamSubscription<KurokoPlayerEvent>? _eventSubscription;
+  StreamSubscription<ErikaPlayerEvent>? _eventSubscription;
   PlayerPlaybackState _state = PlayerPlaybackState.stopped;
   PlayerMediaInfo _mediaInfo = PlayerMediaInfo(duration: 0);
   String _media = '';
@@ -201,20 +201,22 @@ class KurokoPlayerAdapter implements AbstractPlayer {
       Duration(milliseconds: 50);
   Timer? _danmakuConfigTimer;
   bool _danmakuConfigInFlight = false;
-  _KurokoDanmakuConfigPatch? _pendingDanmakuConfig;
-  _KurokoDanmakuConfigPatch? _lastAppliedDanmakuConfig;
+  _ErikaDanmakuConfigPatch? _pendingDanmakuConfig;
+  _ErikaDanmakuConfigPatch? _lastAppliedDanmakuConfig;
   final List<Completer<void>> _pendingDanmakuConfigCompleters =
       <Completer<void>>[];
 
-  // Real Kuroko track descriptors, kept so the UI's index-based
+  // Real Erika track descriptors, kept so the UI's index-based
   // activeAudioTracks/activeSubtitleTracks can be mapped back to native ids.
-  List<KurokoTrackInfo> _audioTrackInfos = const <KurokoTrackInfo>[];
-  List<KurokoTrackInfo> _subtitleTrackInfos = const <KurokoTrackInfo>[];
+  List<ErikaTrackInfo> _audioTrackInfos = const <ErikaTrackInfo>[];
+  List<ErikaTrackInfo> _subtitleTrackInfos = const <ErikaTrackInfo>[];
   List<int> _activeAudioTracks = const <int>[];
   List<int> _activeSubtitleTracks = const <int>[];
 
   static bool get _isSupported =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   bool get prefersPlatformVideoSurface => _isSupported;
 
@@ -388,7 +390,28 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   }
 
   @override
-  Future<PlayerFrame?> snapshot({int width = 0, int height = 0}) async => null;
+  Future<PlayerFrame?> snapshot({int width = 0, int height = 0}) async {
+    if (!_isSupported) {
+      return null;
+    }
+    try {
+      final Uint8List? bytes = await _player.screenshot();
+      if (bytes == null || bytes.isEmpty) {
+        return null;
+      }
+      final video = _mediaInfo.video;
+      final codec =
+          video != null && video.isNotEmpty ? video.first.codec : null;
+      return PlayerFrame(
+        width: width > 0 ? width : (codec?.width ?? 0),
+        height: height > 0 ? height : (codec?.height ?? 0),
+        bytes: bytes,
+      );
+    } catch (error) {
+      debugPrint('Erika: screenshot failed: $error');
+      return null;
+    }
+  }
 
   @override
   void setDecoders(PlayerMediaType type, List<String> decoders) {
@@ -443,7 +466,14 @@ class KurokoPlayerAdapter implements AbstractPlayer {
     ValueChanged<Rect?>? onFrameRectChanged,
   }) {
     _ensureSupported();
-    return KurokoWindowOverlayVideoView(
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return ErikaVideoView(
+        player: _player,
+        debugLabel: debugLabel,
+        onPlatformViewIdChanged: onPlatformViewIdChanged,
+      );
+    }
+    return ErikaWindowOverlayVideoView(
       player: _player,
       debugLabel: debugLabel,
       onPlatformViewIdChanged: onPlatformViewIdChanged,
@@ -451,12 +481,12 @@ class KurokoPlayerAdapter implements AbstractPlayer {
     );
   }
 
-  // ---- Kuroko native danmaku passthrough ----
+  // ---- Erika native danmaku passthrough ----
   //
-  // Kuroko composites danmaku into the video frame natively, so when the Kuroko
+  // Erika composites danmaku into the video frame natively, so when the Erika
   // kernel is active NipaPlay feeds its danmaku list + settings here instead of
   // driving its own Flutter danmaku overlay. The list uses NipaPlay's standard
-  // danmaku maps ({time, content, type, color, ...}); Kuroko's JSON parser
+  // danmaku maps ({time, content, type, color, ...}); Erika's JSON parser
   // accepts that shape directly, so it is forwarded as-is.
 
   bool get supportsNativeDanmaku => _isSupported;
@@ -489,7 +519,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
     await _player.setDanmakuGlobalOffset(offset);
   }
 
-  /// Bridges NipaPlay's danmaku display settings onto Kuroko's DFM+ config.
+  /// Bridges NipaPlay's danmaku display settings onto Erika's DFM+ config.
   /// All arguments are optional; only the supplied ones are pushed down.
   Future<void> setDanmakuConfig({
     bool? enabled,
@@ -515,7 +545,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
     if (!_isSupported || _disposed) {
       return;
     }
-    final patch = _KurokoDanmakuConfigPatch(
+    final patch = _ErikaDanmakuConfigPatch(
       enabled: enabled,
       fontSize: fontSize,
       opacity: opacity,
@@ -633,7 +663,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
 
   Map<String, dynamic> getDetailedMediaInfo() {
     return <String, dynamic>{
-      'kernel': 'Kuroko',
+      'kernel': 'Erika',
       'state': _state.name,
       'position': position,
       'duration': _mediaInfo.duration,
@@ -649,20 +679,20 @@ class KurokoPlayerAdapter implements AbstractPlayer {
   Future<Map<String, dynamic>> getDetailedMediaInfoAsync() async =>
       getDetailedMediaInfo();
 
-  void _handleEvent(KurokoPlayerEvent event) {
+  void _handleEvent(ErikaPlayerEvent event) {
     switch (event.state) {
-      case KurokoPlaybackState.playing:
+      case ErikaPlaybackState.playing:
         _state = PlayerPlaybackState.playing;
         break;
-      case KurokoPlaybackState.paused:
-      case KurokoPlaybackState.ready:
-      case KurokoPlaybackState.opening:
+      case ErikaPlaybackState.paused:
+      case ErikaPlaybackState.ready:
+      case ErikaPlaybackState.opening:
         _state = PlayerPlaybackState.paused;
         break;
-      case KurokoPlaybackState.stopped:
-      case KurokoPlaybackState.closed:
-      case KurokoPlaybackState.idle:
-      case KurokoPlaybackState.error:
+      case ErikaPlaybackState.stopped:
+      case ErikaPlaybackState.closed:
+      case ErikaPlaybackState.idle:
+      case ErikaPlaybackState.error:
         _state = PlayerPlaybackState.stopped;
         break;
     }
@@ -701,22 +731,22 @@ class KurokoPlayerAdapter implements AbstractPlayer {
             codec: PlayerVideoCodecParams(
               width: event.video.width,
               height: event.video.height,
-              name: 'Kuroko Video',
+              name: 'Erika Video',
             ),
             codecName: 'unknown',
           ),
         ],
       );
     }
-    // Kuroko emits the full descriptor list (with native ids, titles and the
+    // Erika emits the full descriptor list (with native ids, titles and the
     // selected flag) on TracksChanged/TrackSelectionChanged. Use it to build
     // mediaInfo so the UI's index-based track selection maps to real ids.
     if (event.trackList.isNotEmpty) {
       final audioInfos = event.trackList
-          .where((t) => t.kind == KurokoTrackKind.audio)
+          .where((t) => t.kind == ErikaTrackKind.audio)
           .toList(growable: false);
       final subtitleInfos = event.trackList
-          .where((t) => t.kind == KurokoTrackKind.subtitle)
+          .where((t) => t.kind == ErikaTrackKind.subtitle)
           .toList(growable: false);
       _audioTrackInfos = audioInfos;
       _subtitleTrackInfos = subtitleInfos;
@@ -730,7 +760,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
               title: audioInfos[i].title ?? 'Audio ${i + 1}',
               language: audioInfos[i].language,
               metadata: <String, String>{'id': '${audioInfos[i].id}'},
-              rawRepresentation: 'Kuroko Audio ${i + 1}',
+              rawRepresentation: 'Erika Audio ${i + 1}',
             ),
         ],
         subtitle: <PlayerSubtitleStreamInfo>[
@@ -739,7 +769,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
               title: subtitleInfos[i].title ?? 'Subtitle ${i + 1}',
               language: subtitleInfos[i].language,
               metadata: <String, String>{'id': '${subtitleInfos[i].id}'},
-              rawRepresentation: 'Kuroko Subtitle ${i + 1}',
+              rawRepresentation: 'Erika Subtitle ${i + 1}',
             ),
         ],
       );
@@ -757,7 +787,7 @@ class KurokoPlayerAdapter implements AbstractPlayer {
 
   void _ensureSupported() {
     if (!_isSupported) {
-      throw UnsupportedError('Kuroko is currently only wired on macOS.');
+      throw UnsupportedError('Erika is currently only wired on macOS/iOS.');
     }
   }
 }

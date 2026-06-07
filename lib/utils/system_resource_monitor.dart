@@ -108,8 +108,8 @@ class SystemResourceMonitor {
         case PlayerKernelType.mediaKit:
           _playerKernelType = 'Libmpv';
           break;
-        case PlayerKernelType.kuroko:
-          _playerKernelType = 'Kuroko';
+        case PlayerKernelType.erika:
+          _playerKernelType = 'Erika';
           break;
       }
     } catch (e) {
