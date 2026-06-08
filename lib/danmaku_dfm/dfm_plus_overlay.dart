@@ -2,9 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:nipaplay/danmaku_abstraction/positioned_danmaku_item.dart';
 import 'package:nipaplay/danmaku_next/next2_emoji_pipeline.dart';
+import 'package:nipaplay/danmaku_next/next2_overlay_viewport.dart';
 import 'package:nipaplay/danmaku_next/next2_texture_bridge.dart';
+import 'package:nipaplay/providers/settings_provider.dart';
 import 'package:nipaplay/utils/video_player_state.dart';
-import 'package:nipaplay/utils/globals.dart' as globals;
+import 'package:provider/provider.dart';
 
 import 'dfm_plus_layout_bridge.dart';
 
@@ -71,8 +73,15 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
   bool _updateInFlight = false;
   bool _updateQueued = false;
 
-  int _lastQuantizedTick = -1 << 31;
+  double _lastTimeSeconds = -1.0;
   bool _forceLayout = false;
+  bool _configurePending = false;
+
+  // Optimized texture update state: avoid redundant per-frame async calls
+  // when texture ID is already stable. Only re-acquire when size changes.
+  int _lastTextureWidth = 0;
+  int _lastTextureHeight = 0;
+  String _lastTextureSurfaceId = '';
 
   int? _textureId;
   bool _textureReady = false;
@@ -86,6 +95,7 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
   void initState() {
     super.initState();
     _surfaceId = 'dfm-${identityHashCode(this)}';
+    _lastTextureSurfaceId = _surfaceId;
   }
 
   @override
@@ -110,14 +120,16 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
         oldWidget.outlineWidth != widget.outlineWidth ||
         oldWidget.shadowStyle != widget.shadowStyle ||
         oldWidget.trackGapRatio != widget.trackGapRatio ||
-        oldWidget.opacity != widget.opacity ||
-        oldWidget.isVisible != widget.isVisible ||
         oldWidget.maxQuantity != widget.maxQuantity ||
         oldWidget.maxLinesPerType != widget.maxLinesPerType ||
         !listEquals(oldWidget.blockWords, widget.blockWords)) {
       _forceLayout = true;
       _queueUpdate();
+    } else if (oldWidget.isVisible != widget.isVisible) {
+      // Visibility only affects display layer, not layout — skip full reconfigure
+      _queueUpdate();
     }
+    // opacity changes are handled in build() via Opacity widget, no update needed
   }
 
   @override
@@ -128,22 +140,53 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final size = Size(constraints.maxWidth, constraints.maxHeight);
-        if (size.isEmpty) {
+        final constrainedSize = Size(
+          constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : constraints.minWidth,
+          constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : constraints.minHeight,
+        );
+        final layoutSize = Next2OverlayViewport.resolveLayoutSize(
+          context,
+          constraints,
+        );
+        if (layoutSize.isEmpty) {
           return const SizedBox.expand();
         }
 
-        if (_layoutSize != size) {
-          _layoutSize = size;
-          _forceLayout = true;
+        if (_layoutSize != layoutSize) {
+          final oldSize = _layoutSize;
+          _layoutSize = layoutSize;
           _queueUpdate();
+          // Sub-pixel jitter (e.g. Windows focus-loss) should not trigger
+          // the async configure() pipeline. Only force re-prepare when the
+          // layout size change is meaningful (>= 1 logical pixel) or this
+          // is the initial layout.
+          if (oldSize.isEmpty ||
+              (oldSize.width - layoutSize.width).abs() >= 2.0 ||
+              (oldSize.height - layoutSize.height).abs() >= 2.0) {
+            _forceLayout = true;
+          }
         }
 
         final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ??
             View.of(context).devicePixelRatio;
+        // DPR can micro-jitter on Windows when the window loses focus or the
+        // user clicks the taskbar (didChangeMetrics fires with a slightly
+        // different value). DPR only affects the texture's pixel size, not the
+        // danmaku layout (layout uses logical pixels). So we update the cached
+        // DPR for the next texture-acquire path, but we do NOT trigger
+        // _forceLayout — the texture path will pick up the new DPR on its own
+        // and re-acquire a different-sized texture if needed. Re-running
+        // prepareLayout here would re-execute overwriteInsert and cause
+        // visible flicker.
         if ((_lastDevicePixelRatio - dpr).abs() > 0.001) {
           _lastDevicePixelRatio = dpr;
-          _forceLayout = true;
+          // DPR change may affect pixelWidth/pixelHeight → needsNewTexture.
+          // Queue an update so the texture size is re-evaluated, but do NOT
+          // set _forceLayout (that would re-run configure/overwriteInsert).
           _queueUpdate();
         }
 
@@ -157,10 +200,9 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
                 Next2TextureBridge.isSupported;
 
             final needsSupersample =
-                globals.isTablet || (globals.isDesktop && dpr < 2.0);
-            final filterQuality = needsSupersample
-                ? FilterQuality.low
-                : FilterQuality.none;
+                context.watch<SettingsProvider>().danmakuSupersample;
+            final filterQuality =
+                needsSupersample ? FilterQuality.low : FilterQuality.none;
             final Widget content = hasTexture
                 ? Texture(
                     textureId: _textureId!,
@@ -168,9 +210,13 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
                   )
                 : const SizedBox.expand();
 
-            return Opacity(
-              opacity: widget.opacity.clamp(0.0, 1.0).toDouble(),
-              child: SizedBox.expand(child: content),
+            return Next2OverlayViewport.buildLayer(
+              layoutSize: layoutSize,
+              constrainedSize: constrainedSize,
+              child: Opacity(
+                opacity: widget.opacity.clamp(0.0, 1.0).toDouble(),
+                child: content,
+              ),
             );
           },
         );
@@ -187,6 +233,9 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
     Future.microtask(_runUpdateLoop);
   }
 
+  /// Update loop: layout is now synchronous (Dart-side), so the per-frame
+  /// position computation has zero async overhead. Only configure() and
+  /// texture upload remain async.
   Future<void> _runUpdateLoop() async {
     _updateScheduled = false;
     if (_updateInFlight) {
@@ -202,36 +251,53 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
           continue;
         }
 
-        final currentTime =
+        double currentTime =
             widget.playbackTimeMs.value / 1000.0 + widget.timeOffset;
-        final quantizedTick = (currentTime * 60.0).round().toInt();
 
-        if (!_forceLayout && quantizedTick == _lastQuantizedTick) {
+        if (!_forceLayout && (currentTime - _lastTimeSeconds).abs() < 0.0001) {
           continue;
         }
 
-        _lastQuantizedTick = quantizedTick;
-        _forceLayout = false;
+        // If config changed, run async configure first. configure() takes
+        // tens to hundreds of milliseconds (Rust prepare + font load), and
+        // the player position may advance significantly during that time.
+        // The worst case: a resumed video where playbackTimeMs is briefly 0
+        // while the player is loading, then jumps to the saved position.
+        // Using the pre-configure currentTime would paint t=0 danmaku.
+        if (_forceLayout || _configurePending) {
+          _forceLayout = false;
+          _configurePending = false;
+          await _bridge.configure(
+            danmakuList: widget.danmakuList,
+            danmakuListVersion: widget.danmakuListVersion,
+            size: _layoutSize,
+            fontSize: widget.fontSize,
+            displayArea: widget.displayArea,
+            scrollDurationSeconds: widget.scrollDurationSeconds,
+            allowStacking: widget.allowStacking,
+            mergeDanmaku: widget.mergeDanmaku,
+            maxQuantity: widget.maxQuantity,
+            maxLinesPerType: widget.maxLinesPerType,
+            trackGapRatio: widget.trackGapRatio,
+            outlineWidth: widget.outlineWidth,
+            customFontFamily: widget.customFontFamily,
+            customFontFilePath: widget.customFontFilePath,
+            blockWords: widget.blockWords,
+          );
+          if (!mounted) {
+            return;
+          }
+          // Re-read playback position — it may have jumped from 0 to the
+          // saved resume point while configure was running.
+          currentTime =
+              widget.playbackTimeMs.value / 1000.0 + widget.timeOffset;
+          _lastTimeSeconds = currentTime;
+        } else {
+          _lastTimeSeconds = currentTime;
+        }
 
-        await _bridge.configure(
-          danmakuList: widget.danmakuList,
-          danmakuListVersion: widget.danmakuListVersion,
-          size: _layoutSize,
-          fontSize: widget.fontSize,
-          displayArea: widget.displayArea,
-          scrollDurationSeconds: widget.scrollDurationSeconds,
-          allowStacking: widget.allowStacking,
-          mergeDanmaku: widget.mergeDanmaku,
-          maxQuantity: widget.maxQuantity,
-          maxLinesPerType: widget.maxLinesPerType,
-          trackGapRatio: widget.trackGapRatio,
-          outlineWidth: widget.outlineWidth,
-          customFontFamily: widget.customFontFamily,
-          customFontFilePath: widget.customFontFilePath,
-          blockWords: widget.blockWords,
-        );
-
-        final frame = await _bridge.layout(currentTime);
+        // Synchronous layout — no await, no microtask delay
+        final frame = _bridge.layout(currentTime);
 
         await _tryUpdateTexture(frame);
         widget.onLayoutCalculated?.call(frame);
@@ -249,14 +315,16 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
     }
 
     final locale = Localizations.maybeLocaleOf(context);
-    final views = WidgetsBinding.instance.platformDispatcher.views;
-    final dpr =
-        views.isNotEmpty ? views.first.devicePixelRatio : _lastDevicePixelRatio;
+
+    // Use cached DPR from build() instead of reading platformDispatcher.views
+    // directly. On Windows, DPR can micro-jitter when the window loses focus,
+    // causing pixelWidth/pixelHeight to oscillate by ±1 pixel, which triggers
+    // needsNewTexture → ensureTexture → isNewEngine → resetScene → flicker.
+    final dpr = _lastDevicePixelRatio;
 
     final needsSupersample =
-        globals.isTablet || (globals.isDesktop && dpr < 2.0);
-    final supersample =
-        needsSupersample ? _supersampleMultiplier : 1.0;
+        context.read<SettingsProvider>().danmakuSupersample;
+    final supersample = needsSupersample ? _supersampleMultiplier : 1.0;
     final double pixelRatio =
         (dpr.isFinite ? dpr.clamp(1.0, 4.0).toDouble() : 1.0) * supersample;
 
@@ -265,41 +333,64 @@ class _DfmPlusOverlayState extends State<DfmPlusOverlay> {
     final int pixelHeight =
         (_layoutSize.height * pixelRatio).round().clamp(1, 16384).toInt();
 
-    final info = await _textureBridge.ensureTexture(
-      surfaceId: _surfaceId,
-      width: pixelWidth,
-      height: pixelHeight,
-    );
+    // Optimized: only re-acquire texture if size changed (avoids redundant
+    // ensureTexture await on every frame when texture ID is already stable).
+    // Also apply a pixel threshold: Windows DPR micro-jitter on focus loss can
+    // cause pixelWidth/pixelHeight to oscillate by ±1 pixel, which would
+    // trigger a full texture/engine rebuild (isNewEngine → resetScene → flicker).
+    // Only rebuild when the pixel size change is significant (>=2 pixels).
+    final int pwDelta = (pixelWidth - _lastTextureWidth).abs();
+    final int phDelta = (pixelHeight - _lastTextureHeight).abs();
+    bool needsNewTexture = _textureId == null ||
+        (pwDelta >= 2) ||
+        (phDelta >= 2) ||
+        _surfaceId != _lastTextureSurfaceId;
 
-    if (info == null) {
-      if (_textureReady || _textureId != null) {
+    if (needsNewTexture) {
+      _lastTextureWidth = pixelWidth;
+      _lastTextureHeight = pixelHeight;
+      _lastTextureSurfaceId = _surfaceId;
+
+      final info = await _textureBridge.ensureTexture(
+        surfaceId: _surfaceId,
+        width: pixelWidth,
+        height: pixelHeight,
+      );
+
+      if (info == null) {
+        if (_textureReady || _textureId != null) {
+          setState(() {
+            _textureReady = false;
+            _textureId = null;
+          });
+        }
+        return false;
+      }
+
+      if (!mounted) {
+        return false;
+      }
+
+      if (_textureId != info.textureId || !_textureReady) {
         setState(() {
-          _textureReady = false;
-          _textureId = null;
+          _textureId = info.textureId;
+          _textureReady = true;
         });
       }
-      return false;
+
+      // When isNewEngine is true, the Rust engine was recreated or resized.
+      // Do NOT call resetScene() here — it clears the glyph atlas, causing
+      // all characters to need re-rasterization (MSDF generation), which
+      // blocks the render thread and causes a visible black flash.
+      // Instead, just mark the emoji atlas dirty and let the next setFrame
+      // call naturally render new content on top of the fresh engine.
+      if (info.isNewEngine) {
+        _emojiPipeline.markAtlasDirty();
+      }
     }
 
-    if (!mounted) {
-      return false;
-    }
-
-    if (_textureId != info.textureId || !_textureReady) {
-      setState(() {
-        _textureId = info.textureId;
-        _textureReady = true;
-      });
-    }
-
-    if (info.isNewEngine) {
-      await _textureBridge.resetScene();
-      _emojiPipeline.markAtlasDirty();
-    }
-
-    final widthScale = info.width > 0 ? info.width / _layoutSize.width : 1.0;
-    final heightScale =
-        info.height > 0 ? info.height / _layoutSize.height : 1.0;
+    final widthScale = pixelWidth > 0 ? pixelWidth / _layoutSize.width : 1.0;
+    final heightScale = pixelHeight > 0 ? pixelHeight / _layoutSize.height : 1.0;
     final fontScale =
         ((widthScale + heightScale) * 0.5).clamp(0.25, 8.0).toDouble();
 

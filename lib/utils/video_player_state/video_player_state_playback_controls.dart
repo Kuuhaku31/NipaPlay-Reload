@@ -369,6 +369,25 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
       _progress = 0.0;
       _bufferedPositionMs = 0;
       _playbackTimeMs.value = 0;
+      _lastRawPlayerMs = -1; // 重置平滑时钟，下次 Ticker 重新对齐
+      // ✅ P2-LOOP-RESTART 修复：补齐 seekTo() 中正确设置的三个锚点字段
+      // 根因：缺少 _smoothAnchorMs/_smoothAnchorElapsedUs/_seekTargetMs 设置
+      // → Ticker callback 下一帧从旧 player.position 重新锚定
+      // → playbackTimeMs 被覆盖回末尾 → 弹幕/视频跳回 → 鬼畜
+      // 参照：seekTo() (line 670-674) 正确设置了这三个字段
+      _smoothAnchorMs = 0.0;
+      _smoothAnchorElapsedUs = _lastElapsedUs;
+      _seekTargetMs = 0.0; // 启用 seek 保护，而非清除
+      _anchorSetBySeek = true; // 标记锚点由 seek/loop 设置
+      // [LOOP-RESTART-DIAG] 诊断：记录重置后的锚点状态
+      if (!kReleaseMode) {
+        debugPrint('[LOOP-RESTART-DIAG] AFTER RESET: '
+            'smoothAnchorMs=${_smoothAnchorMs.toStringAsFixed(1)} '
+            'smoothAnchorElapsedUs=$_smoothAnchorElapsedUs '
+            'lastElapsedUs=$_lastElapsedUs '
+            'seekTargetMs=$_seekTargetMs '
+            'lastRawPlayerMs=$_lastRawPlayerMs');
+      }
       _notifyListeners();
       player.seek(position: 0);
       if (_status != PlayerStatus.playing) {
@@ -575,13 +594,24 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
   }
 
   void _resetVideoState() {
+    if (!kReleaseMode) {
+      debugPrint('[LOOP-RESTART-DIAG] _resetVideoState() CALLED: '
+          '_status=$_status _seekTargetMs=$_seekTargetMs '
+          '_currentVideoPath=$_currentVideoPath');
+    }
     _subtitleManager.clearExternalSubtitle(notifyListenersToo: false);
     _position = Duration.zero;
     _progress = 0.0;
     _duration = Duration.zero;
     _bufferedPositionMs = 0;
-    _playbackTimeMs.value = 0;
-    _lastPlaybackStartMs = 0;
+      _playbackTimeMs.value = 0;
+      _lastRawPlayerMs = -1; // 重置平滑时钟
+      // ✅ P2-LOOP-RESTART 一致性修复：补齐锚点字段（与 seekTo() 保持一致）
+      _smoothAnchorMs = 0.0;
+      _smoothAnchorElapsedUs = 0;
+      _seekTargetMs = null; // [SEEK-TRACE] source=RESET-VIDEO-STATE — idle/stop 场景无需 seek 保护
+      _anchorSetBySeek = false; // idle/stop 场景锚点非 seek 设置
+      _lastPlaybackStartMs = 0;
     if (!_isErrorStopping) {
       // <<< MODIFIED HERE
       _error = null;
@@ -664,6 +694,11 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
       _position = clampedPosition;
       // 同步高频时间轴，确保弹幕立即跳转
       _playbackTimeMs.value = _position.inMilliseconds.toDouble();
+      // 锚定到 seek 目标位置，避免 player.position 延迟导致弹幕闪回
+      _smoothAnchorMs = _position.inMilliseconds.toDouble();
+      _smoothAnchorElapsedUs = _lastElapsedUs;
+      _seekTargetMs = _position.inMilliseconds.toDouble();
+      _anchorSetBySeek = true; // 标记锚点由 seek 设置
       if (_duration.inMilliseconds > 0) {
         _progress = clampedPosition.inMilliseconds / _duration.inMilliseconds;
       }

@@ -13,6 +13,7 @@ import 'package:nipaplay/providers/shared_remote_library_provider.dart';
 import 'package:nipaplay/providers/watch_history_provider.dart';
 import 'package:nipaplay/services/playback_service.dart';
 import 'package:nipaplay/services/bangumi_service.dart';
+import 'package:nipaplay/utils/network_settings.dart';
 import 'package:nipaplay/services/bangumi_api_service.dart';
 import 'package:nipaplay/services/dandanplay_service.dart';
 import 'package:nipaplay/themes/cupertino/widgets/cupertino_bottom_sheet.dart';
@@ -220,16 +221,7 @@ class _CupertinoSharedAnimeDetailPageState
   }
 
   void _onScroll() {
-    if (_currentSegment != _commentsSegment) return;
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.position.pixels;
-    if (maxScroll > 0 && currentScroll >= maxScroll - 200) {
-      final state = _commentsWidgetKey.currentState;
-      if (state is CupertinoBangumiCommentsWidgetState) {
-        state.tryLoadMore();
-      }
-    }
+    // 评论段的滚动检测已移至 CupertinoBangumiCommentsWidget 内部
   }
 
   @override
@@ -1228,7 +1220,7 @@ class _CupertinoSharedAnimeDetailPageState
               )
             else if (_currentSegment == _commentsSegment)
               SliverFillRemaining(
-                hasScrollBody: false,
+                hasScrollBody: true,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                   child: _buildCommentsSection(context),
@@ -2566,8 +2558,9 @@ class _CupertinoSharedAnimeDetailPageState
 
   Future<String?> _requestBangumiHighQualityImage(String bangumiId) async {
     try {
+      final bangumiServer = await NetworkSettings.getBangumiServer();
       final uri = Uri.parse(
-        'https://api.bgm.tv/v0/subjects/$bangumiId/image?type=large',
+        '$bangumiServer/v0/subjects/$bangumiId/image?type=large',
       );
       debugPrint('[共享番剧详情] 请求Bangumi高清封面: $uri');
       final response = await http.head(

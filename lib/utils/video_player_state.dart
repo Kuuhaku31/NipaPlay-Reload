@@ -289,7 +289,21 @@ class VideoPlayerState extends ChangeNotifier implements WindowListener {
   final int _positionSaveIntervalMs = 3000; // 位置保存最小间隔
   final int _positionSaveDeltaThresholdMs = 2000; // 位置保存位移阈值
   // 高频时间轴：提供给弹幕的独立时间源（毫秒）
+  // 使用 Ticker elapsed 插值实现微秒精度，消除 player.position 整数ms导致的频闪
+  // Ticker.elapsed 与 vsync 精确同步，比 DateTime.now()（~1ms精度）更适合弹幕渲染
   final ValueNotifier<double> _playbackTimeMs = ValueNotifier<double>(0);
+  double _smoothAnchorMs = 0.0; // 上次锚定的播放位置（ms）
+  int _smoothAnchorElapsedUs = 0; // 锚定时的 Ticker elapsed（微秒）
+  int _lastRawPlayerMs = -1; // 上次 player.position 原始值，用于检测变化
+  int _lastElapsedUs = 0; // 最近一次 Ticker elapsed（微秒），供 seek 时使用
+  int _lastDiagFrameSkipTimeMs = 0; // [NEXT-DIAG] FRAME SKIP 日志节流：上次输出时间（ms）
+  int _diagBaselineFrameUs = 0; // [NEXT-DIAG] 自适应帧间隔基线（取最小帧间隔）
+  int _diagFrameSampleCount = 0; // [NEXT-DIAG] 基线采样帧数
+  int _lastDiagRoundTimeMs = 0; // [DRIFT-ROUND-DIAG] 根因A诊断：round舍入误差日志节流
+  int _lastDiagPtmBackwardMs = 0; // [PTM-BACKWARD-DIAG] playbackTimeMs回退日志节流
+  int _lastDiagDriftSnapMs = 0; // [DRIFT-SNAP-DIAG] 大漂移对齐日志节流
+  double? _seekTargetMs; // seek 目标位置，player.position 追上后清除
+  bool _anchorSetBySeek = false; // ✅ 标记 _smoothAnchorMs 是否由 seek/loop 操作设置（区分首帧加载 vs seek 后旧 playerMs）
   Timer? _hideControlsTimer;
   Timer? _hideMouseTimer;
   Timer? _autoHideTimer;

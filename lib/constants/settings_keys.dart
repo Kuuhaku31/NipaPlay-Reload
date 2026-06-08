@@ -30,7 +30,16 @@ class SettingsKeys {
   static const String labsEnableNext2DanmakuKernel =
       'labs_enable_next2_danmaku_kernel';
 
+  static const String labsEnableNextPlusPlusEngine =
+      'labs_enable_next_plus_plus_engine';
+
   static const String torrentDownloadDirectory = 'torrent_download_directory';
+
+  static const String torrentRecentDownloadDirectories =
+      'torrent_recent_download_directories';
+
+  static const String torrentRecentDownloadDirectoriesMigrated =
+      'torrent_recent_download_directories_migrated';
 
   static const String downloaderEnabled = 'downloader_enabled';
 
@@ -44,4 +53,6 @@ class SettingsKeys {
       'downloader_auto_scanned_completed_task_keys';
 
   static const String githubProxyUrl = 'github_proxy_url';
+
+  static const String danmakuSupersample = 'danmaku_supersample';
 }

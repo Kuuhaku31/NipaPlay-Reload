@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1494214116;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1429887362;
 
 // Section: executor
 
@@ -969,6 +969,43 @@ fn wire__crate__api__torrent__torrent_pause_impl(
         },
     )
 }
+fn wire__crate__api__torrent__torrent_preview_magnet_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "torrent_preview_magnet",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_magnet_uri = <String>::sse_decode(&mut deserializer);
+            let api_download_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::torrent::torrent_preview_magnet(
+                        api_magnet_uri,
+                        api_download_dir,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__torrent__torrent_resume_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1215,7 +1252,6 @@ impl SseDecode for crate::api::dfm_plus::DfmPlusPreparedLayout {
             <Vec<crate::api::dfm_plus::DfmPlusPreparedItem>>::sse_decode(deserializer);
         let mut var_itemTimes = <Vec<f64>>::sse_decode(deserializer);
         let mut var_trackCount = <i32>::sse_decode(deserializer);
-        let mut var_cacheKey = <u64>::sse_decode(deserializer);
         return crate::api::dfm_plus::DfmPlusPreparedLayout {
             handle: var_handle,
             width: var_width,
@@ -1225,7 +1261,6 @@ impl SseDecode for crate::api::dfm_plus::DfmPlusPreparedLayout {
             items: var_items,
             item_times: var_itemTimes,
             track_count: var_trackCount,
-            cache_key: var_cacheKey,
         };
     }
 }
@@ -1846,8 +1881,14 @@ fn pde_ffi_dispatcher_primary_impl(
         }
         25 => wire__crate__api__torrent__torrent_list_impl(port, ptr, rust_vec_len, data_len),
         26 => wire__crate__api__torrent__torrent_pause_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__torrent__torrent_resume_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__torrent__torrent_stream_url_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__torrent__torrent_preview_magnet_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        28 => wire__crate__api__torrent__torrent_resume_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__torrent__torrent_stream_url_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2062,7 +2103,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::dfm_plus::DfmPlusPreparedLayo
             self.items.into_into_dart().into_dart(),
             self.item_times.into_into_dart().into_dart(),
             self.track_count.into_into_dart().into_dart(),
-            self.cache_key.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2549,7 +2589,6 @@ impl SseEncode for crate::api::dfm_plus::DfmPlusPreparedLayout {
         <Vec<crate::api::dfm_plus::DfmPlusPreparedItem>>::sse_encode(self.items, serializer);
         <Vec<f64>>::sse_encode(self.item_times, serializer);
         <i32>::sse_encode(self.track_count, serializer);
-        <u64>::sse_encode(self.cache_key, serializer);
     }
 }
 

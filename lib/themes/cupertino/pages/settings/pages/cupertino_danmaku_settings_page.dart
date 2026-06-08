@@ -160,7 +160,7 @@ class _CupertinoDanmakuSettingsPageState
       case DanmakuRenderEngine.canvas:
         return context.l10n.danmakuRenderEngineDescriptionCanvasExperimental;
       case DanmakuRenderEngine.nipaplayNext:
-        return context.l10n.danmakuRenderEngineDescriptionNipaplayNext;
+        return '${DanmakuKernelFactory.nipaplayNextDisplayName}：${context.l10n.danmakuRenderEngineDescriptionNipaplayNext.replaceAll('NipaPlay Next：', '')}';
       case DanmakuRenderEngine.next2:
         return Next2PlatformSupport.description;
       case DanmakuRenderEngine.dfmPlus:
@@ -177,7 +177,7 @@ class _CupertinoDanmakuSettingsPageState
       case DanmakuRenderEngine.canvas:
         return context.l10n.danmakuRenderEngineTitleCanvasExperimental;
       case DanmakuRenderEngine.nipaplayNext:
-        return context.l10n.danmakuRenderEngineTitleNipaplayNext;
+        return DanmakuKernelFactory.nipaplayNextDisplayName;
       case DanmakuRenderEngine.next2:
         return 'NipaPlay Next2';
       case DanmakuRenderEngine.dfmPlus:
@@ -336,6 +336,45 @@ class _CupertinoDanmakuSettingsPageState
             ),
             backgroundColor: tileBackground,
           ),
+          if (_selectedDanmakuRenderEngine == DanmakuRenderEngine.next2 ||
+              _selectedDanmakuRenderEngine == DanmakuRenderEngine.dfmPlus)
+            Consumer<SettingsProvider>(
+              builder: (context, settingsProvider, _) {
+                return CupertinoSettingsTile(
+                  leading: Icon(
+                    CupertinoIcons.fullscreen,
+                    color: resolveSettingsIconColor(context),
+                  ),
+                  title: const Text('弹幕超采样渲染'),
+                  subtitle: const Text('在部分设备上以更高像素密度渲染弹幕，使文字更清晰，但会增加 GPU 负担'),
+                  trailing: AdaptiveSwitch(
+                    value: settingsProvider.danmakuSupersample,
+                    onChanged: (value) {
+                      settingsProvider.setDanmakuSupersample(value);
+                      if (mounted) {
+                        AdaptiveSnackBar.show(
+                          context,
+                          message: value ? '已开启弹幕超采样渲染' : '已关闭弹幕超采样渲染',
+                          type: AdaptiveSnackBarType.success,
+                        );
+                      }
+                    },
+                  ),
+                  onTap: () {
+                    final bool newValue = !settingsProvider.danmakuSupersample;
+                    settingsProvider.setDanmakuSupersample(newValue);
+                    if (mounted) {
+                      AdaptiveSnackBar.show(
+                        context,
+                        message: newValue ? '已开启弹幕超采样渲染' : '已关闭弹幕超采样渲染',
+                        type: AdaptiveSnackBarType.success,
+                      );
+                    }
+                  },
+                  backgroundColor: tileBackground,
+                );
+              },
+            ),
         ],
       ),
       const SizedBox(height: 16),
