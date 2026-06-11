@@ -56,6 +56,7 @@ class DandanplayService {
   static final Map<int, DateTime> _bangumiDetailsMemoryCacheTime = {};
   static final Map<int, Future<Map<String, dynamic>>> _bangumiDetailsInFlight =
       {};
+  static int _bangumiDetailsCacheEpoch = 0;
   static bool get isLoggedIn => _isLoggedIn;
   static String? get userName => _userName;
   static String? get screenName => _screenName;
@@ -223,6 +224,7 @@ class DandanplayService {
     String username,
     String screenName,
   ) async {
+    _clearBangumiDetailsCache();
     _token = token;
     _userName = username;
     _screenName = screenName;
@@ -240,6 +242,7 @@ class DandanplayService {
   }
 
   static Future<void> clearLoginInfo() async {
+    _clearBangumiDetailsCache();
     _token = null;
     _userName = null;
     _screenName = null;
@@ -323,6 +326,9 @@ class DandanplayService {
   }
 
   static Future<void> saveToken(String token) async {
+    if (_token != token) {
+      _clearBangumiDetailsCache();
+    }
     _token = token;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('dandanplay_token', token);
@@ -334,6 +340,7 @@ class DandanplayService {
   }
 
   static Future<void> clearToken() async {
+    _clearBangumiDetailsCache();
     _token = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('dandanplay_token');
@@ -1071,6 +1078,7 @@ class DandanplayService {
         final data = json.decode(response.body);
         if (data['success'] == true) {
           debugPrint('[弹弹play服务] 观看状态更新成功');
+          _clearBangumiDetailsCache();
         } else {
           throw Exception(data['errorMessage'] ?? '更新观看状态失败');
         }
@@ -1964,6 +1972,7 @@ class DandanplayService {
         final data = json.decode(response.body);
         if (data['success'] == true) {
           debugPrint('[弹弹play服务] 播放历史提交成功');
+          _clearBangumiDetailsCache();
           return data;
         } else {
           throw Exception(data['errorMessage'] ?? '提交播放历史失败');
@@ -1982,6 +1991,20 @@ class DandanplayService {
     return _isLoggedIn && _token != null
         ? _authorizedBangumiDetailsCacheDuration
         : _bangumiDetailsCacheDuration;
+  }
+
+  static void _clearBangumiDetailsCache([int? animeId]) {
+    _bangumiDetailsCacheEpoch++;
+    if (animeId == null) {
+      _bangumiDetailsMemoryCache.clear();
+      _bangumiDetailsMemoryCacheTime.clear();
+      _bangumiDetailsInFlight.clear();
+      return;
+    }
+
+    _bangumiDetailsMemoryCache.remove(animeId);
+    _bangumiDetailsMemoryCacheTime.remove(animeId);
+    _bangumiDetailsInFlight.remove(animeId);
   }
 
   // 获取番剧详情（包含用户观看状态）
@@ -2005,6 +2028,7 @@ class DandanplayService {
       }
     }
 
+    final requestEpoch = _bangumiDetailsCacheEpoch;
     final request = _fetchBangumiDetailsFromApi(bangumiId);
     if (useCache) {
       _bangumiDetailsInFlight[bangumiId] = request;
@@ -2012,13 +2036,15 @@ class DandanplayService {
 
     try {
       final data = await request;
-      if (useCache && data['success'] == true) {
+      if (useCache &&
+          data['success'] == true &&
+          requestEpoch == _bangumiDetailsCacheEpoch) {
         _bangumiDetailsMemoryCache[bangumiId] = Map<String, dynamic>.from(data);
         _bangumiDetailsMemoryCacheTime[bangumiId] = DateTime.now();
       }
       return data;
     } finally {
-      if (useCache) {
+      if (useCache && identical(_bangumiDetailsInFlight[bangumiId], request)) {
         _bangumiDetailsInFlight.remove(bangumiId);
       }
     }
@@ -2402,6 +2428,7 @@ class DandanplayService {
         final data = json.decode(response.body);
         if (data['success'] == true) {
           debugPrint('[弹弹play服务] 收藏添加成功');
+          _clearBangumiDetailsCache(animeId);
           return data;
         } else {
           throw Exception(data['errorMessage'] ?? '添加收藏失败');
@@ -2453,6 +2480,7 @@ class DandanplayService {
         final data = json.decode(response.body);
         if (data['success'] == true) {
           debugPrint('[弹弹play服务] 收藏取消成功');
+          _clearBangumiDetailsCache(animeId);
           return data;
         } else {
           throw Exception(data['errorMessage'] ?? '取消收藏失败');

@@ -45,6 +45,7 @@ class DandanplayService {
   static final Map<int, DateTime> _bangumiDetailsMemoryCacheTime = {};
   static final Map<int, Future<Map<String, dynamic>>> _bangumiDetailsInFlight =
       {};
+  static int _bangumiDetailsCacheEpoch = 0;
 
   static bool get isLoggedIn => _isLoggedIn;
   static String? get userName => _userName;
@@ -255,6 +256,7 @@ class DandanplayService {
 
   static Future<void> saveLoginInfo(
       String token, String username, String screenName) async {
+    _clearBangumiDetailsCache();
     _token = token;
     await _updateLoginStatus(
       isLoggedIn: true,
@@ -265,6 +267,7 @@ class DandanplayService {
   }
 
   static Future<void> clearLoginInfo() async {
+    _clearBangumiDetailsCache();
     final webApiBaseUrl = await _getWebApiBaseUrl();
     if (webApiBaseUrl != null) {
       // 调用API登出，然后清除本地状态
@@ -282,11 +285,15 @@ class DandanplayService {
 
   static Future<void> saveToken(String token) async {
     if (token.isEmpty) return;
+    if (_token != token) {
+      _clearBangumiDetailsCache();
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('dandanplay_token', token);
   }
 
   static Future<void> clearToken() async {
+    _clearBangumiDetailsCache();
     _token = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('dandanplay_token');
@@ -1039,7 +1046,9 @@ class DandanplayService {
           }),
         );
 
-        if (response.statusCode != 200) {
+        if (response.statusCode == 200) {
+          _clearBangumiDetailsCache();
+        } else {
           debugPrint('[弹弹play服务-Web] 更新观看状态失败: HTTP ${response.statusCode}');
         }
       } catch (e) {
@@ -1079,7 +1088,9 @@ class DandanplayService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data['success'] != true) {
+        if (data['success'] == true) {
+          _clearBangumiDetailsCache();
+        } else {
           throw Exception(data['errorMessage'] ?? '更新观看状态失败');
         }
       } else {
@@ -1347,7 +1358,11 @@ class DandanplayService {
         );
 
         if (response.statusCode == 200) {
-          return json.decode(response.body);
+          final data = json.decode(response.body);
+          if (data is Map<String, dynamic> && data['success'] == true) {
+            _clearBangumiDetailsCache();
+          }
+          return data;
         } else {
           throw Exception('提交播放历史失败: HTTP ${response.statusCode}');
         }
@@ -1399,6 +1414,7 @@ class DandanplayService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true) {
+          _clearBangumiDetailsCache();
           return data;
         } else {
           throw Exception(data['errorMessage'] ?? '提交播放历史失败');
@@ -1417,6 +1433,20 @@ class DandanplayService {
     return _isLoggedIn && _token != null
         ? _authorizedBangumiDetailsCacheDuration
         : _bangumiDetailsCacheDuration;
+  }
+
+  static void _clearBangumiDetailsCache([int? animeId]) {
+    _bangumiDetailsCacheEpoch++;
+    if (animeId == null) {
+      _bangumiDetailsMemoryCache.clear();
+      _bangumiDetailsMemoryCacheTime.clear();
+      _bangumiDetailsInFlight.clear();
+      return;
+    }
+
+    _bangumiDetailsMemoryCache.remove(animeId);
+    _bangumiDetailsMemoryCacheTime.remove(animeId);
+    _bangumiDetailsInFlight.remove(animeId);
   }
 
   static Future<Map<String, dynamic>> getBangumiDetails(
@@ -1439,6 +1469,7 @@ class DandanplayService {
       }
     }
 
+    final requestEpoch = _bangumiDetailsCacheEpoch;
     final request = _fetchBangumiDetailsFromApi(bangumiId);
     if (useCache) {
       _bangumiDetailsInFlight[bangumiId] = request;
@@ -1446,13 +1477,15 @@ class DandanplayService {
 
     try {
       final data = await request;
-      if (useCache && data['success'] == true) {
+      if (useCache &&
+          data['success'] == true &&
+          requestEpoch == _bangumiDetailsCacheEpoch) {
         _bangumiDetailsMemoryCache[bangumiId] = Map<String, dynamic>.from(data);
         _bangumiDetailsMemoryCacheTime[bangumiId] = DateTime.now();
       }
       return data;
     } finally {
-      if (useCache) {
+      if (useCache && identical(_bangumiDetailsInFlight[bangumiId], request)) {
         _bangumiDetailsInFlight.remove(bangumiId);
       }
     }
@@ -1695,7 +1728,11 @@ class DandanplayService {
         );
 
         if (response.statusCode == 200) {
-          return json.decode(response.body);
+          final data = json.decode(response.body);
+          if (data is Map<String, dynamic> && data['success'] == true) {
+            _clearBangumiDetailsCache(animeId);
+          }
+          return data;
         } else {
           throw Exception('添加收藏失败: HTTP ${response.statusCode}');
         }
@@ -1740,6 +1777,7 @@ class DandanplayService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true) {
+          _clearBangumiDetailsCache(animeId);
           return data;
         } else {
           throw Exception(data['errorMessage'] ?? '添加收藏失败');
@@ -1763,7 +1801,11 @@ class DandanplayService {
         );
 
         if (response.statusCode == 200) {
-          return json.decode(response.body);
+          final data = json.decode(response.body);
+          if (data is Map<String, dynamic> && data['success'] == true) {
+            _clearBangumiDetailsCache(animeId);
+          }
+          return data;
         } else {
           throw Exception('取消收藏失败: HTTP ${response.statusCode}');
         }
@@ -1799,6 +1841,7 @@ class DandanplayService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success'] == true) {
+          _clearBangumiDetailsCache(animeId);
           return data;
         } else {
           throw Exception(data['errorMessage'] ?? '取消收藏失败');
