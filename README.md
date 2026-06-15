@@ -116,14 +116,6 @@ brew tap AimesSoft/nipaplay-reload
 brew install --cask nipaplay-reload
 ```
 
-#### Arch Linux (AUR)
-
-```bash
-paru -S nipaplay-reload-bin
-# 或
-yay -S nipaplay-reload-bin
-```
-
 #### Gentoo Linux
 
 ```bash
