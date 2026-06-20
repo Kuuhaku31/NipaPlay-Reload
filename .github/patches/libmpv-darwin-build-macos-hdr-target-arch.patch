@@ -71,3 +71,16 @@ diff --git a/nix/packages/mk-pkg-mpv/default.nix b/nix/packages/mk-pkg-mpv/defau
      else
        null;
    isMacOSHdrProfile =
+diff --git a/nix/packages/mk-pkg-uchardet/default.nix b/nix/packages/mk-pkg-uchardet/default.nix
+--- a/nix/packages/mk-pkg-uchardet/default.nix
++++ b/nix/packages/mk-pkg-uchardet/default.nix
+@@ -14,7 +14,8 @@
+   pname = import ../../utils/name/package.nix name;
+   src = callPackage ../../utils/fetch-tarball/default.nix {
+     name = "${pname}-source-${version}";
+-    inherit (packageLock) url sha256;
++    url = "https://distfiles.macports.org/uchardet/uchardet-${version}.tar.xz";
++    inherit (packageLock) sha256;
+   };
+   patchedSource = pkgs.runCommand "${pname}-patched-source-${version}" { } ''
+     mkdir -p $out/subprojects/uchardet

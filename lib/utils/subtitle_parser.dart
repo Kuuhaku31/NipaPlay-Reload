@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:charset_converter/charset_converter.dart';
-import 'package:nipaplay/cpp_native/nipaplay_native.dart';
+import 'package:nipaplay/cpp_native/bindings/subtitle_parser.dart';
 
 class SubtitleDecodeResult {
   final String text;
