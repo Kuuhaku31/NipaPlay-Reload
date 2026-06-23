@@ -2076,6 +2076,12 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
   bool get prefersPlatformVideoSurface => _prefersPlatformVideoSurface;
 
+  bool get usesWindowOverlayVideoSurface =>
+      _prefersPlatformVideoSurface &&
+      defaultTargetPlatform == TargetPlatform.macOS &&
+      !_envFlagEnabled('NIPAPLAY_MACOS_HDR_USE_APPKIT_VIEW') &&
+      !_envFlagEnabled('NIPAPLAY_DISABLE_MACOS_WINDOW_OVERLAY');
+
   Future<void> attachPlatformVideoSurface({
     required int viewHandle,
     int? windowHandle,

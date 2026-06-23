@@ -526,7 +526,9 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
         return WillPopScope(
           onWillPop: () => _handleSystemBack(videoState),
           child: CupertinoPageScaffold(
-            backgroundColor: CupertinoColors.black,
+            backgroundColor: videoState.player.usesWindowOverlayVideoSurface
+                ? Colors.transparent
+                : CupertinoColors.black,
             child: AnnotatedRegion<SystemUiOverlayStyle>(
               value: SystemUiOverlayStyle.light,
               child: SafeArea(
@@ -545,17 +547,14 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
     if (_useNipaplayControls) {
       return _buildNipaplayBody(videoState);
     }
+    final usesWindowHostedVideoSurface =
+        videoState.player.usesWindowOverlayVideoSurface;
     final textureId = videoState.player.textureId.value;
     final controller = kIsWeb ? videoState.player.videoPlayerController : null;
-    final nativeVideoView = videoState.player.prefersPlatformVideoSurface
-        ? (videoState.player.buildPlatformVideoSurface(
-              debugLabel: videoState.currentVideoPath?.split('/').last,
-            ) ??
-            MacOSNativeVideoView(
-              player: videoState.player,
-              debugLabel: videoState.currentVideoPath?.split('/').last,
-            ))
-        : null;
+    final nativeVideoView = _buildNativeVideoSurface(
+      videoState,
+      usesWindowHostedVideoSurface: usesWindowHostedVideoSurface,
+    );
     final hasVideo = videoState.hasVideo &&
         (kIsWeb ||
             videoState.player.prefersPlatformVideoSurface ||
@@ -629,21 +628,29 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
             children: [
               Positioned.fill(
                 child: Container(
-                  color: CupertinoColors.black,
+                  color: usesWindowHostedVideoSurface
+                      ? Colors.transparent
+                      : CupertinoColors.black,
                   child: hasVideo
-                      ? Center(
-                          child: AspectRatio(
-                            aspectRatio: videoState.aspectRatio,
-                            child: kIsWeb
-                                ? (controller == null
-                                    ? const SizedBox.shrink()
-                                    : VideoPlayer(controller))
-                                : (nativeVideoView ??
-                                    (textureId == null
+                      ? (usesWindowHostedVideoSurface
+                          ? (kIsWeb
+                              ? (controller == null
+                                  ? const SizedBox.shrink()
+                                  : VideoPlayer(controller))
+                              : (nativeVideoView ?? const SizedBox.shrink()))
+                          : Center(
+                              child: AspectRatio(
+                                aspectRatio: videoState.aspectRatio,
+                                child: kIsWeb
+                                    ? (controller == null
                                         ? const SizedBox.shrink()
-                                        : Texture(textureId: textureId))),
-                          ),
-                        )
+                                        : VideoPlayer(controller))
+                                    : (nativeVideoView ??
+                                        (textureId == null
+                                            ? const SizedBox.shrink()
+                                            : Texture(textureId: textureId))),
+                              ),
+                            ))
                       : _buildPlaceholder(videoState),
                 ),
               ),
@@ -680,14 +687,52 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
     );
   }
 
+  Widget? _buildNativeVideoSurface(
+    VideoPlayerState videoState, {
+    required bool usesWindowHostedVideoSurface,
+  }) {
+    if (!videoState.player.prefersPlatformVideoSurface) {
+      return null;
+    }
+
+    final debugLabel = videoState.currentVideoPath?.split('/').last;
+    final playerSurface = videoState.player.buildPlatformVideoSurface(
+      debugLabel: debugLabel,
+      onFrameRectChanged: videoState.setWindowHostedVideoRect,
+    );
+    if (playerSurface != null) {
+      return playerSurface;
+    }
+
+    if (usesWindowHostedVideoSurface) {
+      return MacOSWindowNativeVideoOverlaySurface(
+        player: videoState.player,
+        debugLabel: debugLabel,
+        onFrameRectChanged: videoState.setWindowHostedVideoRect,
+      );
+    }
+
+    return MacOSNativeVideoView(
+      player: videoState.player,
+      debugLabel: debugLabel,
+    );
+  }
+
   Widget _buildNipaplayBody(VideoPlayerState videoState) {
+    final usesWindowHostedVideoSurface =
+        videoState.player.usesWindowOverlayVideoSurface;
     return Stack(
       fit: StackFit.expand,
       children: [
-        const ColoredBox(color: Colors.black),
-        const Positioned.fill(
+        if (!usesWindowHostedVideoSurface)
+          const ColoredBox(color: Colors.black),
+        Positioned.fill(
           child: VideoPlayerWidget(
-            emptyPlaceholder: ColoredBox(color: Colors.black),
+            emptyPlaceholder: ColoredBox(
+              color: usesWindowHostedVideoSurface
+                  ? Colors.transparent
+                  : Colors.black,
+            ),
           ),
         ),
         if (videoState.hasVideo) _buildNipaplayControls(videoState),

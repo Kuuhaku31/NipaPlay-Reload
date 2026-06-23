@@ -218,6 +218,12 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
         Platform.environment['NIPAPLAY_DISABLE_MACOS_WINDOW_OVERLAY'] != '1';
   }
 
+  bool _shouldUseWindowHostedVideoOverlay(VideoPlayerState videoState) {
+    return videoState.player.usesWindowOverlayVideoSurface ||
+        (_shouldUseMacOSWindowHostedVideoOverlay &&
+            videoState.player.prefersPlatformVideoSurface);
+  }
+
   double getFontSize(VideoPlayerState videoState) {
     return videoState.actualDanmakuFontSize;
   }
@@ -277,12 +283,11 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
     if (!mounted) {
       return;
     }
-    _videoPlayerStateInstance?.setMacOSWindowHostedVideoRect(rect);
+    _videoPlayerStateInstance?.setWindowHostedVideoRect(rect);
   }
 
   Widget _buildVideoSurfaceStage(VideoPlayerState videoState, int? textureId) {
-    if (videoState.player.prefersPlatformVideoSurface &&
-        _shouldUseMacOSWindowHostedVideoOverlay) {
+    if (_shouldUseWindowHostedVideoOverlay(videoState)) {
       return _buildVideoSurface(videoState, textureId);
     }
 
@@ -305,10 +310,8 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
         _macosNativeVideoViewId != null;
   }
 
-  bool _shouldKeepMacOSNativeVideoSurface(VideoPlayerState videoState) {
-    return !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.macOS &&
-        videoState.player.prefersPlatformVideoSurface &&
+  bool _shouldKeepWindowHostedVideoSurface(VideoPlayerState videoState) {
+    return _shouldUseWindowHostedVideoOverlay(videoState) &&
         videoState.currentVideoPath != null &&
         videoState.status != PlayerStatus.idle &&
         videoState.status != PlayerStatus.error &&
@@ -840,7 +843,7 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
                 videoState.player.prefersPlatformVideoSurface ||
                 (textureId != null && textureId >= 0);
 
-            final shouldKeepNativeSurface = _shouldKeepMacOSNativeVideoSurface(
+            final shouldKeepNativeSurface = _shouldKeepWindowHostedVideoSurface(
               videoState,
             );
 
@@ -1107,4 +1110,3 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
     );
   }
 }
-
