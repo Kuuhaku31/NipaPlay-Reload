@@ -249,6 +249,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
   Ticker? _ticker;
   Duration _interpolatedPosition = Duration.zero;
   Duration _lastActualPosition = Duration.zero;
+
   /// 高精度时钟戳（微秒），用于播放位置插值的 delta 计算。
   /// 使用 microsecond 精度替代原来的 millisecond 精度，
   /// 消除 Windows 平台上时钟粒度过粗（~15.6ms）导致的位置跳变。
@@ -281,6 +282,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
   Future<void>? _platformVideoSurfaceDetachFuture;
   int _platformVideoSurfaceBindingGeneration = 0;
   Media? _pendingPlatformMedia;
+  bool _platformVideoSurfaceAvailable = true;
 
   MediaKitPlayerAdapter({int? bufferSize, String? androidAudioOutput})
       : _mpvDiagnosticsEnabled = _shouldEnableMpvDiagnostics(),
@@ -324,6 +326,13 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     _addEventListeners();
     _setupDefaultTrackSelectionBehavior();
     _initializeTicker();
+    if (_prefersPlatformVideoSurface) {
+      _logPlatformVideoSurface(
+        'enabled platform=${Platform.operatingSystem} '
+        'hardwareAcceleration=$_enableHardwareAcceleration '
+        'mpvDiagnostics=$_mpvDiagnosticsEnabled',
+      );
+    }
   }
 
   void _applyMpvLogLevelOverride() {
@@ -389,23 +398,29 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
     final Map<String, String> options;
     if (Platform.isWindows) {
-      options = <String, String>{
-        'vo': _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
-        'gpu-api': _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
-        'gpu-context': _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
-        'd3d11-output-mode':
-            _envString('NIPAPLAY_MPV_D3D11_OUTPUT_MODE') ?? 'window',
-        'd3d11-output-format':
-            _envString('NIPAPLAY_MPV_D3D11_OUTPUT_FORMAT') ?? 'auto',
-        'd3d11-output-csp':
-            _envString('NIPAPLAY_MPV_D3D11_OUTPUT_CSP') ?? 'auto',
-        'target-colorspace-hint':
-            _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'auto',
-        'target-colorspace-hint-mode':
-            _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ?? 'target',
-        'hdr-compute-peak':
-            _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
-      };
+      options = _prefersPlatformVideoSurface
+          ? <String, String>{
+              'hdr-compute-peak':
+                  _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
+            }
+          : <String, String>{
+              'vo': _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
+              'gpu-api': _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
+              'gpu-context': _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
+              'd3d11-output-mode':
+                  _envString('NIPAPLAY_MPV_D3D11_OUTPUT_MODE') ?? 'window',
+              'd3d11-output-format':
+                  _envString('NIPAPLAY_MPV_D3D11_OUTPUT_FORMAT') ?? 'auto',
+              'd3d11-output-csp':
+                  _envString('NIPAPLAY_MPV_D3D11_OUTPUT_CSP') ?? 'auto',
+              'target-colorspace-hint':
+                  _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'auto',
+              'target-colorspace-hint-mode':
+                  _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ??
+                      'target',
+              'hdr-compute-peak':
+                  _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
+            };
     } else {
       options = _prefersPlatformVideoSurface
           ? <String, String>{
@@ -436,24 +451,15 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
       return;
     }
 
-    if (Platform.isWindows) {
-      _setMpvPropertyOption('vo', _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
-          log: _mpvDiagnosticsEnabled);
-      _setMpvPropertyOption(
-          'gpu-api', _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
-          log: _mpvDiagnosticsEnabled);
-      _setMpvPropertyOption(
-          'gpu-context', _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
-          log: _mpvDiagnosticsEnabled);
-      _setMpvPropertyOption('force-window', 'no', log: _mpvDiagnosticsEnabled);
-    } else {
-      _setMpvPropertyOption('vo', 'libmpv', log: _mpvDiagnosticsEnabled);
-      _setMpvPropertyOption('wid', '0', log: _mpvDiagnosticsEnabled);
-      _setMpvPropertyOption('force-window', 'no', log: _mpvDiagnosticsEnabled);
-    }
+    _setMpvPropertyOption('vo', 'libmpv', log: _mpvDiagnosticsEnabled);
+    _setMpvPropertyOption('wid', '0', log: _mpvDiagnosticsEnabled);
+    _setMpvPropertyOption('force-window', 'no', log: _mpvDiagnosticsEnabled);
     _setMpvPropertyOption('gpu-hwdec-interop', 'auto',
         log: _mpvDiagnosticsEnabled);
   }
+
+  bool get _usesPlatformVideoSurface =>
+      _prefersPlatformVideoSurface && _platformVideoSurfaceAvailable;
 
   void _setMpvPropertyOption(
     String name,
@@ -472,6 +478,284 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         debugPrint('MediaKit HDR诊断: 设置 mpv $name 失败: $e');
       }
     }
+  }
+
+  Future<void> _setMpvRuntimeProperty(
+    dynamic platform,
+    String name,
+    String value,
+  ) async {
+    _properties[name] = value;
+    await platform.setProperty?.call(name, value);
+  }
+
+  Future<void> _applyWindowsTextureFallbackOptions() async {
+    if (!Platform.isWindows) {
+      return;
+    }
+
+    final options = <String, String>{
+      'vo': _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
+      'gpu-api': _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
+      'gpu-context': _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
+      'force-window': 'no',
+      'wid': '-1',
+      'd3d11-output-mode':
+          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_MODE') ?? 'window',
+      'd3d11-output-format':
+          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_FORMAT') ?? 'auto',
+      'd3d11-output-csp': _envString('NIPAPLAY_MPV_D3D11_OUTPUT_CSP') ?? 'auto',
+      'target-colorspace-hint':
+          _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'auto',
+      'target-colorspace-hint-mode':
+          _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ?? 'target',
+      'hdr-compute-peak': _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
+    };
+
+    final dynamic platform = _player.platform;
+    for (final entry in options.entries) {
+      if (platform != null) {
+        await _setMpvRuntimeProperty(platform, entry.key, entry.value);
+      } else {
+        _properties[entry.key] = entry.value;
+      }
+    }
+    _properties.remove('vid');
+  }
+
+  Future<void> _activateTextureVideoFallback(String reason) async {
+    if (!_prefersPlatformVideoSurface ||
+        !_platformVideoSurfaceAvailable ||
+        _isDisposed) {
+      return;
+    }
+
+    _platformVideoSurfaceAvailable = false;
+    _attachedPlatformViewId = null;
+    _attachedPlatformViewHandle = null;
+    _attachedPlatformWindowHandle = null;
+    _platformVideoSurfaceBindingGeneration += 1;
+    final pendingMedia = _pendingPlatformMedia;
+    _pendingPlatformMedia = null;
+
+    _logPlatformVideoSurface(
+      'outputMode=flutter-texture fallback to Flutter texture video surface: '
+      '$reason',
+    );
+    await _applyWindowsTextureFallbackOptions();
+
+    if (_controller == null) {
+      _controller = VideoController(
+        _player,
+        configuration: VideoControllerConfiguration(
+          enableHardwareAcceleration: _enableHardwareAcceleration,
+        ),
+      );
+      _controller?.waitUntilFirstFrameRendered.then((_) {
+        _updateTextureIdFromController();
+      });
+    }
+    await updateTexture();
+
+    if (pendingMedia != null && !_isDisposed) {
+      _openMainMedia(_mediaWithCurrentOptions(pendingMedia));
+    }
+  }
+
+  Future<Map<String, dynamic>?> _requestWindowsNativeVideoHandlesWithRetry({
+    required int viewId,
+    required int requestGeneration,
+  }) async {
+    const retryDelays = <Duration>[
+      Duration.zero,
+      Duration(milliseconds: 16),
+      Duration(milliseconds: 50),
+      Duration(milliseconds: 100),
+      Duration(milliseconds: 200),
+      Duration(milliseconds: 400),
+      Duration(milliseconds: 800),
+    ];
+
+    PlatformException? lastSurfaceError;
+    for (var attempt = 0; attempt < retryDelays.length; attempt += 1) {
+      final delay = retryDelays[attempt];
+      if (delay.inMicroseconds > 0) {
+        await Future<void>.delayed(delay);
+      }
+      if (_isDisposed ||
+          requestGeneration != _platformVideoSurfaceBindingGeneration ||
+          !_usesPlatformVideoSurface) {
+        _logPlatformVideoSurface(
+          'windows native getViewHandles cancelled attempt=${attempt + 1} '
+          'disposed=$_isDisposed requestGeneration=$requestGeneration '
+          'currentGeneration=$_platformVideoSurfaceBindingGeneration '
+          'available=$_platformVideoSurfaceAvailable',
+        );
+        return null;
+      }
+
+      try {
+        final handles =
+            await _platformNativeVideoChannel.invokeMapMethod<String, dynamic>(
+          'getViewHandles',
+          <String, dynamic>{'viewId': viewId},
+        );
+        _logPlatformVideoSurface(
+          'outputMode=windows-native getViewHandles ready '
+          'attempt=${attempt + 1}/${retryDelays.length} result=$handles',
+        );
+        return handles;
+      } on PlatformException catch (e) {
+        if (e.code != 'NATIVE_SURFACE_UNAVAILABLE') {
+          rethrow;
+        }
+        lastSurfaceError = e;
+        _logPlatformVideoSurface(
+          'windows native getViewHandles pending '
+          'attempt=${attempt + 1}/${retryDelays.length}: '
+          '${e.message ?? e.code}',
+        );
+        unawaited(
+          _dumpPlatformNativeVideoDiagnostics(
+            'getViewHandles-pending-${attempt + 1}',
+          ),
+        );
+      }
+    }
+
+    if (requestGeneration == _platformVideoSurfaceBindingGeneration &&
+        _usesPlatformVideoSurface &&
+        !_isDisposed) {
+      await _activateTextureVideoFallback(
+        lastSurfaceError?.message ??
+            lastSurfaceError?.code ??
+            'Windows native video surface did not become ready',
+      );
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _buildMediaOptions() {
+    final options = <String, dynamic>{};
+    _properties.forEach((key, value) {
+      options[key] = value;
+    });
+
+    if (_usesPlatformVideoSurface && Platform.isWindows) {
+      options['vo'] = 'libmpv';
+      options['wid'] = '0';
+      options['force-window'] = 'no';
+      options['gpu-hwdec-interop'] = 'auto';
+      options['vid'] = 'auto';
+      options.remove('gpu-api');
+      options.remove('gpu-context');
+      options.remove('d3d11-output-mode');
+      options.remove('d3d11-output-format');
+      options.remove('d3d11-output-csp');
+      options.remove('target-colorspace-hint');
+      options.remove('target-colorspace-hint-mode');
+    }
+
+    return options;
+  }
+
+  Media _mediaWithCurrentOptions(Media media) {
+    final options = _buildMediaOptions();
+    return Media(
+      media.uri,
+      extras: options,
+      httpHeaders: media.httpHeaders,
+      start: media.start,
+      end: media.end,
+    );
+  }
+
+  void _logPlatformVideoSurface(String message) {
+    if (!_prefersPlatformVideoSurface) {
+      return;
+    }
+    if (Platform.isWindows ||
+        _mpvDiagnosticsEnabled ||
+        _envFlagEnabled('NIPAPLAY_MACOS_HDR_EXIT_TRACE') ||
+        _envFlagEnabled('NIPAPLAY_WINDOWS_HDR_EXIT_TRACE')) {
+      debugPrint('[NativeVideoSurface][Adapter] $message');
+    }
+  }
+
+  Future<void> _dumpPlatformNativeVideoDiagnostics(String phase) async {
+    if (!_prefersPlatformVideoSurface ||
+        _isDisposed ||
+        (!Platform.isWindows && !Platform.isMacOS)) {
+      return;
+    }
+    if (!Platform.isWindows &&
+        !_mpvDiagnosticsEnabled &&
+        !_envFlagEnabled('NIPAPLAY_MACOS_HDR_EXIT_TRACE')) {
+      return;
+    }
+
+    final viewId = _attachedPlatformViewId ?? _windowHostedPlatformSurfaceId;
+    try {
+      final diagnostics =
+          await _platformNativeVideoChannel.invokeMapMethod<String, dynamic>(
+        'getViewDiagnostics',
+        <String, dynamic>{'viewId': viewId},
+      );
+      _logPlatformVideoSurface('diagnostics[$phase] $diagnostics');
+    } catch (e) {
+      _logPlatformVideoSurface('diagnostics[$phase] failed: $e');
+    }
+  }
+
+  Future<void> _dumpPlatformMpvVideoDiagnostics(String phase) async {
+    if (!_prefersPlatformVideoSurface || _isDisposed) {
+      return;
+    }
+    if (!Platform.isWindows &&
+        !_mpvDiagnosticsEnabled &&
+        !_envFlagEnabled('NIPAPLAY_MACOS_HDR_EXIT_TRACE')) {
+      return;
+    }
+
+    final dynamic platform = _player.platform;
+    if (platform == null) {
+      return;
+    }
+
+    Future<dynamic> readProperty(String name) async {
+      try {
+        final value = platform.getProperty?.call(name);
+        return value is Future ? await value : value;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final properties = <String, dynamic>{};
+    for (final name in <String>[
+      'vid',
+      'current-vo',
+      'vo-configured',
+      'vo',
+      'wid',
+      'force-window',
+      'gpu-api',
+      'gpu-context',
+      'd3d11-output-mode',
+      'd3d11-output-format',
+      'video-codec',
+      'hwdec-current',
+      'dwidth',
+      'dheight',
+      'video-params/w',
+      'video-params/h',
+      'video-out-params/w',
+      'video-out-params/h',
+    ]) {
+      properties[name] = await readProperty(name);
+    }
+    properties.removeWhere((_, value) => value == null);
+    _logPlatformVideoSurface('mpv diagnostics[$phase] $properties');
   }
 
   static int? _intFromNativeValue(dynamic value) {
@@ -877,7 +1161,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         final trackBitRate = (track as dynamic).bitrate as int?;
 
         // 规范化声道名称：mpv可能返回"unknown2"等非友好名称，需转换为stereo/5.1等
-        final friendlyChannels = _normalizeChannelName(trackChannelsStr, trackChannels);
+        final friendlyChannels =
+            _normalizeChannelName(trackChannelsStr, trackChannels);
 
         // 构建可辨识的标题：优先使用容器元数据，否则用轨道索引+编解码器信息
         String title;
@@ -888,7 +1173,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         } else {
           // 无元数据时，使用轨道索引+编解码器构造可辨识名称
           final codecPart = trackCodec ?? 'unknown';
-          title = 'Audio ${i + 1} ($codecPart${friendlyChannels.isNotEmpty ? ', $friendlyChannels' : ''})';
+          title =
+              'Audio ${i + 1} ($codecPart${friendlyChannels.isNotEmpty ? ', $friendlyChannels' : ''})';
         }
 
         final language = trackLanguage ?? '';
@@ -1089,7 +1375,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         final trackBitRate = (track as dynamic).bitrate as int?;
 
         // 规范化声道名称
-        final friendlyChannels = _normalizeChannelName(trackChannelsStr, trackChannels);
+        final friendlyChannels =
+            _normalizeChannelName(trackChannelsStr, trackChannels);
 
         // 构建可辨识的标题
         String title;
@@ -1099,7 +1386,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
           title = trackLanguage;
         } else {
           final codecPart = trackCodec ?? 'unknown';
-          title = 'Audio ${i + 1} ($codecPart${friendlyChannels.isNotEmpty ? ', $friendlyChannels' : ''})';
+          title =
+              'Audio ${i + 1} ($codecPart${friendlyChannels.isNotEmpty ? ', $friendlyChannels' : ''})';
         }
 
         final language = trackLanguage ?? '';
@@ -1682,7 +1970,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
   @override
   Future<int?> updateTexture() async {
-    if (_prefersPlatformVideoSurface) {
+    if (_usesPlatformVideoSurface) {
       return null;
     }
     if (_textureIdNotifier.value == null) {
@@ -1739,23 +2027,23 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     }
     _pendingExternalAudioIsFresh = false;
 
-    final mediaOptions = <String, dynamic>{};
-    _properties.forEach((key, value) {
-      mediaOptions[key] = value;
-    });
+    final mediaOptions = _buildMediaOptions();
 
     final preparedMedia = _prepareNetworkMediaIfNeeded(path);
 
     final media = Media(
       preparedMedia.url,
-      extras: mediaOptions.isNotEmpty ? mediaOptions : null,
+      extras: mediaOptions,
       httpHeaders: preparedMedia.httpHeaders,
     );
 
     //debugPrint('MediaKitAdapter: 打开媒体 (MAIN VIDEO/AUDIO): $path');
     if (!_isDisposed) {
-      if (_prefersPlatformVideoSurface && _attachedPlatformViewId == null) {
+      if (_usesPlatformVideoSurface && _attachedPlatformViewId == null) {
         _pendingPlatformMedia = media;
+        _logPlatformVideoSurface(
+          'defer media open until native surface attaches media=$path',
+        );
         if (_mpvDiagnosticsEnabled) {
           debugPrint(
             'MediaKit HDR诊断: defer media open until platform native video surface attaches',
@@ -1807,6 +2095,14 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     if (_isDisposed) {
       return;
     }
+    final outputMode = _usesPlatformVideoSurface
+        ? (Platform.isWindows ? 'windows-native' : 'macos-native')
+        : 'flutter-texture';
+    _logPlatformVideoSurface(
+      'outputMode=$outputMode open main media url=${media.uri} '
+      'attachedViewId=$_attachedPlatformViewId '
+      'attachedHandle=$_attachedPlatformViewHandle extras=${media.extras}',
+    );
 
     // 切集时重置章节获取标志 + 重试计数 + 取消待重试 timer + 清空旧章节列表，
     // 新集 duration 就绪后重新获取（P3 修复：重试状态也需随切集重置）。
@@ -1816,7 +2112,33 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     _chapterRetryTimer = null;
     _mediaInfo = _mediaInfo.copyWith(chapters: const []);
 
-    unawaited(_player.open(media, play: false));
+    unawaited(() async {
+      try {
+        final dynamic platform = _player.platform;
+        if (_usesPlatformVideoSurface && platform != null) {
+          await _setMpvRuntimeProperty(platform, 'vid', 'auto');
+          await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
+          await _setMpvRuntimeProperty(platform, 'wid', '0');
+          await _setMpvRuntimeProperty(platform, 'force-window', 'no');
+          unawaited(_dumpPlatformMpvVideoDiagnostics('before-open'));
+        }
+        await _player.open(media, play: false);
+        if (_usesPlatformVideoSurface && !_isDisposed && platform != null) {
+          await _setMpvRuntimeProperty(platform, 'vid', 'auto');
+          await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
+          await _setMpvRuntimeProperty(platform, 'wid', '0');
+          await _setMpvRuntimeProperty(platform, 'force-window', 'no');
+          unawaited(_dumpPlatformMpvVideoDiagnostics('after-open'));
+          Future.delayed(
+            const Duration(milliseconds: 1500),
+            () => unawaited(
+                _dumpPlatformMpvVideoDiagnostics('after-open+1500ms')),
+          );
+        }
+      } catch (error) {
+        debugPrint('MediaKit: 打开媒体失败: $error');
+      }
+    }());
     _scheduleMacOSHdrDiagnostics();
 
     // 在主媒体加载后，通过audio-add命令加载外部音频文件（如MKA）
@@ -1836,7 +2158,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     Future.delayed(const Duration(milliseconds: 1500), () async {
       // 代数检查：如果已加载新的主媒体，则放弃本次外挂音频加载
       if (currentGeneration != _mediaLoadGeneration) {
-        debugPrint('MediaKitAdapter: 外挂音频加载被作废（代数不匹配: $currentGeneration vs $_mediaLoadGeneration）');
+        debugPrint(
+            'MediaKitAdapter: 外挂音频加载被作废（代数不匹配: $currentGeneration vs $_mediaLoadGeneration）');
         return;
       }
       if (_isDisposed || _currentMedia.isEmpty) return;
@@ -1968,7 +2291,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
   @override
   Future<void> prepare() async {
-    if (!_prefersPlatformVideoSurface) {
+    if (!_usesPlatformVideoSurface) {
       await updateTexture();
     }
     if (!_isDisposed) {
@@ -2016,7 +2339,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
       // ✨ 优化：异步执行销毁，不阻塞主线程
       // Future.microtask 仍在当前事件循环执行，会阻塞 UI
       // Future.delayed 让出一帧时间，确保页面过渡动画完成
-      unawaited(Future.delayed(const Duration(milliseconds: 16), disposePlayerCore));
+      unawaited(
+          Future.delayed(const Duration(milliseconds: 16), disposePlayerCore));
     }
     _textureIdNotifier.dispose();
   }
@@ -2123,19 +2447,23 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
   Future<List<PlayerChapter>> _fetchChaptersViaSubProperties() async {
     final countRaw = await _getMpvPropertyForDiagnostics('chapter-list/count');
     if (countRaw == null || countRaw.isEmpty) {
-      debugPrint('[CHAPTER-DIAG] _fetchChaptersViaSubProperties: chapter-list/count 返回空');
+      debugPrint(
+          '[CHAPTER-DIAG] _fetchChaptersViaSubProperties: chapter-list/count 返回空');
       return const [];
     }
     final count = int.tryParse(countRaw.trim());
     if (count == null || count <= 0) {
-      debugPrint('[CHAPTER-DIAG] _fetchChaptersViaSubProperties: count 无效 (raw="$countRaw")');
+      debugPrint(
+          '[CHAPTER-DIAG] _fetchChaptersViaSubProperties: count 无效 (raw="$countRaw")');
       return const [];
     }
     final result = <PlayerChapter>[];
     for (int i = 0; i < count; i++) {
       if (_isDisposed) return const [];
-      final timeRaw = await _getMpvPropertyForDiagnostics('chapter-list/$i/time');
-      final titleRaw = await _getMpvPropertyForDiagnostics('chapter-list/$i/title');
+      final timeRaw =
+          await _getMpvPropertyForDiagnostics('chapter-list/$i/time');
+      final titleRaw =
+          await _getMpvPropertyForDiagnostics('chapter-list/$i/title');
       // time 为秒（double），mpv get_property_string 返回 "1.234" 形式
       double timeSec = 0.0;
       if (timeRaw != null && timeRaw.isNotEmpty) {
@@ -2151,9 +2479,12 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     // 按 startMs 升序排序（mpv 已排序，防御性确保）
     result.sort((a, b) => a.startMs.compareTo(b.startMs));
     // 重建 index（排序后）
-    final sorted = List.generate(result.length,
-        (i) => PlayerChapter(index: i, startMs: result[i].startMs, title: result[i].title));
-    debugPrint('[CHAPTER-DIAG] _fetchChaptersViaSubProperties: 解析成功 ${sorted.length} 个章节，'
+    final sorted = List.generate(
+        result.length,
+        (i) => PlayerChapter(
+            index: i, startMs: result[i].startMs, title: result[i].title));
+    debugPrint(
+        '[CHAPTER-DIAG] _fetchChaptersViaSubProperties: 解析成功 ${sorted.length} 个章节，'
         '首章=${sorted.isEmpty ? "无" : "${sorted.first.startMs}ms \"${sorted.first.title}\""}, '
         '末章=${sorted.isEmpty ? "无" : "${sorted.last.startMs}ms \"${sorted.last.title}\""}');
     return sorted;
@@ -2179,7 +2510,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     }
     try {
       // 先探测 chapter-list/count 判断就绪状态
-      final countRaw = await _getMpvPropertyForDiagnostics('chapter-list/count');
+      final countRaw =
+          await _getMpvPropertyForDiagnostics('chapter-list/count');
       if (_isDisposed) return;
       if (countRaw == null || countRaw.trim().isEmpty) {
         // count 返回空：chapter-list 尚未就绪（网络流媒体 duration 先行场景）
@@ -2196,7 +2528,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         // count<=0：确实无章节（mpv 明确返回 0），标记已获取避免重复探测
         _chaptersFetched = true;
         _chapterRetryCount = 0;
-        debugPrint('[CHAPTER-DIAG] _refreshChapters: chapter-list/count=$count，无章节，标记已获取');
+        debugPrint(
+            '[CHAPTER-DIAG] _refreshChapters: chapter-list/count=$count，无章节，标记已获取');
         return;
       }
       // count>0：chapter-list 已就绪，逐项读取子属性
@@ -2212,7 +2545,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
                   prev.last.startMs != chapters.last.startMs));
       if (changed) {
         _mediaInfo = _mediaInfo.copyWith(chapters: chapters);
-        debugPrint('[CHAPTER-DIAG] _refreshChapters: 章节列表已更新，共 ${chapters.length} 个章节');
+        debugPrint(
+            '[CHAPTER-DIAG] _refreshChapters: 章节列表已更新，共 ${chapters.length} 个章节');
       } else {
         debugPrint('[CHAPTER-DIAG] _refreshChapters: 章节列表未变化，跳过更新');
       }
@@ -2231,7 +2565,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     if (_chapterRetryCount >= _maxChapterRetries) {
       _chaptersFetched = true;
       _chapterRetryCount = 0;
-      debugPrint('[CHAPTER-DIAG] _scheduleChapterRetry: 已达最大重试次数 $_maxChapterRetries，放弃重试');
+      debugPrint(
+          '[CHAPTER-DIAG] _scheduleChapterRetry: 已达最大重试次数 $_maxChapterRetries，放弃重试');
       return;
     }
     _chapterRetryCount++;
@@ -2262,12 +2597,14 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     try {
       final dynamic platform = _player.platform;
       if (platform == null) {
-        debugPrint('[CHAPTER-DIAG] setChapter($index): platform 为 null，跳过 mpv chapter seek');
+        debugPrint(
+            '[CHAPTER-DIAG] setChapter($index): platform 为 null，跳过 mpv chapter seek');
         return;
       }
       await platform.setProperty('chapter', index.toString());
     } catch (e) {
-      debugPrint('[CHAPTER-DIAG] setChapter($index) 失败（mpv chapter seek 降级，仅精确 seek 生效）: $e');
+      debugPrint(
+          '[CHAPTER-DIAG] setChapter($index) 失败（mpv chapter seek 降级，仅精确 seek 生效）: $e');
     }
   }
 
@@ -2376,14 +2713,14 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     }
   }
 
-  bool get prefersPlatformVideoSurface => _prefersPlatformVideoSurface;
+  bool get prefersPlatformVideoSurface => _usesPlatformVideoSurface;
 
   Future<void> attachPlatformVideoSurface({
     required int viewHandle,
     int? windowHandle,
     int? platformViewId,
   }) async {
-    if (!_prefersPlatformVideoSurface || _isDisposed) {
+    if (!_usesPlatformVideoSurface || _isDisposed) {
       return;
     }
 
@@ -2400,20 +2737,39 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
             ? platformViewId
             : _windowHostedPlatformSurfaceId;
     var resolvedViewHandle = viewHandle;
+    _logPlatformVideoSurface(
+      'attach requested platformViewId=$platformViewId '
+      'resolvedViewId=$resolvedPlatformViewId viewHandle=$viewHandle '
+      'windowHandle=$windowHandle attachedViewId=$_attachedPlatformViewId '
+      'attachedHandle=$_attachedPlatformViewHandle',
+    );
     if (Platform.isWindows && resolvedViewHandle <= 0) {
-      final handles =
-          await _platformNativeVideoChannel.invokeMapMethod<String, dynamic>(
-        'getViewHandles',
-        <String, dynamic>{'viewId': resolvedPlatformViewId},
+      final handles = await _requestWindowsNativeVideoHandlesWithRetry(
+        viewId: resolvedPlatformViewId,
+        requestGeneration: _platformVideoSurfaceBindingGeneration,
       );
+      if (handles == null) {
+        return;
+      }
       resolvedViewHandle =
           _intFromNativeValue(handles?['viewHandle']) ?? resolvedViewHandle;
+      windowHandle ??= _intFromNativeValue(handles?['windowHandle']);
+      _logPlatformVideoSurface(
+        'outputMode=windows-native getViewHandles result=$handles '
+        'resolvedViewHandle=$resolvedViewHandle '
+        'resolvedWindowHandle=$windowHandle',
+      );
     }
 
     final isSameBinding = _attachedPlatformViewId == resolvedPlatformViewId &&
         _attachedPlatformViewHandle == resolvedViewHandle &&
         _attachedPlatformWindowHandle == windowHandle;
     if (isSameBinding) {
+      _logPlatformVideoSurface(
+        'attach skipped: same binding viewId=$resolvedPlatformViewId '
+        'viewHandle=$resolvedViewHandle windowHandle=$windowHandle',
+      );
+      unawaited(_dumpPlatformNativeVideoDiagnostics('attach-same-binding'));
       return;
     }
 
@@ -2434,53 +2790,33 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
       if (playerHandle <= 0) {
         throw StateError('No valid libmpv player handle available.');
       }
+      _logPlatformVideoSurface(
+        'attach bindingGeneration=$bindingGeneration '
+        'playerHandle=$playerHandle viewId=$resolvedPlatformViewId '
+        'viewHandle=$resolvedViewHandle windowHandle=$windowHandle',
+      );
 
       if (Platform.isWindows) {
         if (resolvedViewHandle <= 0) {
           throw StateError('No valid Windows native video HWND available.');
         }
-        await platform.setProperty?.call(
-          'vo',
-          _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
-        );
-        await platform.setProperty?.call(
-          'gpu-api',
-          _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
-        );
-        await platform.setProperty?.call(
-          'gpu-context',
-          _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
-        );
-        await platform.setProperty?.call('wid', '$resolvedViewHandle');
-        await platform.setProperty?.call('force-window', 'yes');
-        await platform.setProperty?.call(
-          'd3d11-output-mode',
-          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_MODE') ?? 'window',
-        );
-        await platform.setProperty?.call(
-          'd3d11-output-format',
-          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_FORMAT') ?? 'auto',
-        );
-        await platform.setProperty?.call(
-          'd3d11-output-csp',
-          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_CSP') ?? 'auto',
-        );
-        await platform.setProperty?.call(
-          'target-colorspace-hint',
-          _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'auto',
-        );
-        await platform.setProperty?.call(
-          'target-colorspace-hint-mode',
-          _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ?? 'target',
+        await _setMpvRuntimeProperty(platform, 'vid', 'auto');
+        await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
+        await _setMpvRuntimeProperty(platform, 'wid', '0');
+        await _setMpvRuntimeProperty(platform, 'force-window', 'no');
+        _logPlatformVideoSurface(
+          'mpv Windows render API properties applied '
+          'vo=libmpv wid=0 force-window=no hostHwnd=$resolvedViewHandle',
         );
       } else {
-        await platform.setProperty?.call('vo', 'libmpv');
-        await platform.setProperty?.call('wid', '0');
-        await platform.setProperty?.call('force-window', 'no');
+        await _setMpvRuntimeProperty(platform, 'vid', 'auto');
+        await _setMpvRuntimeProperty(platform, 'vo', 'libmpv');
+        await _setMpvRuntimeProperty(platform, 'wid', '0');
+        await _setMpvRuntimeProperty(platform, 'force-window', 'no');
       }
-      await platform.setProperty?.call('gpu-hwdec-interop', 'auto');
-      await platform.setProperty?.call('sub-use-margins', 'no');
-      await platform.setProperty?.call('sub-scale-with-window', 'yes');
+      await _setMpvRuntimeProperty(platform, 'gpu-hwdec-interop', 'auto');
+      await _setMpvRuntimeProperty(platform, 'sub-use-margins', 'no');
+      await _setMpvRuntimeProperty(platform, 'sub-scale-with-window', 'yes');
       await _platformNativeVideoChannel.invokeMethod<void>(
         'attachPlayer',
         <String, dynamic>{
@@ -2488,14 +2824,31 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
           'playerHandle': playerHandle,
         },
       );
+      _logPlatformVideoSurface(
+        'outputMode=windows-native native attachPlayer completed '
+        'viewId=$resolvedPlatformViewId '
+        'playerHandle=$playerHandle',
+      );
+      unawaited(_dumpPlatformNativeVideoDiagnostics('after-attachPlayer'));
+      unawaited(_dumpPlatformMpvVideoDiagnostics('after-attachPlayer'));
       if (_isDisposed ||
           bindingGeneration != _platformVideoSurfaceBindingGeneration) {
+        _logPlatformVideoSurface(
+          'attach aborted after native attach: disposed=$_isDisposed '
+          'bindingGeneration=$bindingGeneration '
+          'currentGeneration=$_platformVideoSurfaceBindingGeneration',
+        );
         return;
       }
       final pendingMedia = _pendingPlatformMedia;
       if (pendingMedia != null) {
         _pendingPlatformMedia = null;
-        _openMainMedia(pendingMedia);
+        final mediaWithWindowOptions = _mediaWithCurrentOptions(pendingMedia);
+        _logPlatformVideoSurface(
+          'opening pending media after surface attach '
+          'extras=${mediaWithWindowOptions.extras}',
+        );
+        _openMainMedia(mediaWithWindowOptions);
       }
 
       if (_mpvDiagnosticsEnabled) {
@@ -2503,7 +2856,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
           'MediaKit HDR诊断: attach platform native video surface '
           'viewId=$resolvedPlatformViewId playerHandle=$playerHandle '
           'viewHandle=$resolvedViewHandle '
-          'renderer=${Platform.isWindows ? 'gpu-next/d3d11' : 'libmpv-opengl'}',
+          'renderer=libmpv-opengl',
         );
       }
       if (Platform.isMacOS &&
@@ -2518,11 +2871,27 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
       if (currentPosition > Duration.zero) {
         await _player.seek(currentPosition);
       }
+      unawaited(_dumpPlatformNativeVideoDiagnostics('attach-complete'));
       unawaited(_dumpMacOSHdrDiagnostics('surface-attached'));
       Future.delayed(
         const Duration(milliseconds: 1500),
         () => unawaited(_dumpMacOSHdrDiagnostics('surface-attached+1500ms')),
       );
+    } on PlatformException catch (e) {
+      if (Platform.isWindows && e.code == 'NATIVE_SURFACE_UNAVAILABLE') {
+        if (bindingGeneration == _platformVideoSurfaceBindingGeneration) {
+          await _activateTextureVideoFallback(e.message ?? e.code);
+        }
+        return;
+      }
+      if (bindingGeneration == _platformVideoSurfaceBindingGeneration) {
+        _attachedPlatformViewId = null;
+        _attachedPlatformViewHandle = null;
+        _attachedPlatformWindowHandle = null;
+        _platformVideoSurfaceBindingGeneration += 1;
+      }
+      debugPrint('MediaKit: 缁戝畾骞冲彴鍘熺敓瑙嗛闈㈠け璐? $e');
+      rethrow;
     } catch (e) {
       if (bindingGeneration == _platformVideoSurfaceBindingGeneration) {
         _attachedPlatformViewId = null;
@@ -2543,10 +2912,18 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     if (platformViewId != null &&
         _attachedPlatformViewId != null &&
         platformViewId != _attachedPlatformViewId) {
+      _logPlatformVideoSurface(
+        'detach ignored: requested=$platformViewId '
+        'attached=$_attachedPlatformViewId',
+      );
       return;
     }
 
     final viewId = _attachedPlatformViewId;
+    _logPlatformVideoSurface(
+      'detach requested requested=$platformViewId attachedViewId=$viewId '
+      'attachedHandle=$_attachedPlatformViewHandle',
+    );
     _attachedPlatformViewId = null;
     _attachedPlatformViewHandle = null;
     _attachedPlatformWindowHandle = null;
@@ -2564,20 +2941,19 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     final detachFuture = () async {
       try {
         final dynamic platform = _player.platform;
-        if (Platform.isWindows && platform != null) {
-          await platform.setProperty?.call('wid', '-1');
-          await platform.setProperty?.call('force-window', 'no');
-        }
         if (viewId != null) {
           await _platformNativeVideoChannel.invokeMethod<void>(
             'detachPlayer',
             <String, dynamic>{'viewId': viewId},
           );
+          _logPlatformVideoSurface(
+              'native detachPlayer completed viewId=$viewId');
         }
         if (platform != null) {
           await platform.setProperty?.call('vo', 'libmpv');
           await platform.setProperty?.call('wid', '0');
           await platform.setProperty?.call('force-window', 'no');
+          _logPlatformVideoSurface('mpv output reset to libmpv render path');
         }
       } catch (e) {
         debugPrint('MediaKit: 解绑平台原生视频面失败: $e');
@@ -2720,11 +3096,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
       Future.delayed(const Duration(milliseconds: 500), () {
         if (!_isDisposed) {
           // 重新打开媒体
-          final mediaOptions = <String, dynamic>{};
-          _properties.forEach((key, value) {
-            mediaOptions[key] = value;
-          });
-
+          final mediaOptions = _buildMediaOptions();
           _player.open(Media(_currentMedia, extras: mediaOptions), play: false);
           //debugPrint('MediaKitAdapter: Jellyfin流媒体重试完成');
         }
@@ -3128,7 +3500,16 @@ String _normalizeChannelName(String? channelsStr, int? channelsCount) {
   if (channelsStr != null && channelsStr.isNotEmpty) {
     final lower = channelsStr.toLowerCase();
     // 已知的友好名称，直接返回
-    const knownNames = {'stereo', 'mono', '5.1', '7.1', '3.0', '2.1', '4.0', 'quad'};
+    const knownNames = {
+      'stereo',
+      'mono',
+      '5.1',
+      '7.1',
+      '3.0',
+      '2.1',
+      '4.0',
+      'quad'
+    };
     if (knownNames.contains(lower)) return channelsStr;
 
     // 处理mpv的"unknownN"格式：提取数字，根据声道数映射友好名称

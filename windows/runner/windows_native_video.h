@@ -5,6 +5,8 @@
 #include <flutter/method_channel.h>
 
 #include <memory>
+#include <optional>
+#include <string>
 
 #include <windows.h>
 
@@ -13,6 +15,8 @@ class BinaryMessenger;
 template <typename T>
 class MethodResult;
 }  // namespace flutter
+
+class WindowsOpenGLVideoRenderer;
 
 class WindowsNativeVideoPlugin {
  public:
@@ -37,12 +41,16 @@ class WindowsNativeVideoPlugin {
   void UpdateOverlayFrame(const flutter::EncodableMap& args);
   flutter::EncodableMap BuildHandles() const;
   flutter::EncodableMap BuildDiagnostics() const;
+  std::string BuildDiagnosticsSummary() const;
 
   HWND host_window_ = nullptr;
   HWND flutter_view_ = nullptr;
   HWND overlay_window_ = nullptr;
+  std::optional<int64_t> overlay_frame_generation_;
   int64_t attached_player_handle_ = 0;
   bool overlay_visible_ = false;
+  bool flutter_view_color_key_enabled_ = false;
+  std::unique_ptr<WindowsOpenGLVideoRenderer> video_renderer_;
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
 };

@@ -26,16 +26,16 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
-  windows_native_video_plugin_ = std::make_unique<WindowsNativeVideoPlugin>(
-      GetHandle(), flutter_controller_->view()->GetNativeWindow(),
-      flutter_controller_->engine()->messenger());
   DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
     auto* flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController*>(controller);
     auto* registry = flutter_view_controller->engine();
     RegisterPlugins(registry);
   });
-  SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  HWND flutter_view = flutter_controller_->view()->GetNativeWindow();
+  SetChildContent(flutter_view);
+  windows_native_video_plugin_ = std::make_unique<WindowsNativeVideoPlugin>(
+      GetHandle(), flutter_view, flutter_controller_->engine()->messenger());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();

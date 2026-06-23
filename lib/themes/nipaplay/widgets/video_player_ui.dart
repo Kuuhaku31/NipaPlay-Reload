@@ -72,6 +72,8 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
   bool _hasStartedSeekDrag = false;
   final OverlayContextMenuController _contextMenuController =
       OverlayContextMenuController();
+  int _windowsNativeOverlayPointerLogCount = 0;
+  int _lastPointerActivityMs = 0;
 
   // <<< ADDED: Hold a reference to VideoPlayerState for managing the callback
   VideoPlayerState? _videoPlayerStateInstance;
@@ -258,6 +260,7 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
           debugLabel: videoState.currentVideoPath?.split('/').last,
           onPlatformViewIdChanged: _updateMacOSNativeVideoViewId,
           onFrameRectChanged: _handleMacOSWindowHostedVideoRectChanged,
+          onPointerActivity: _handleWindowsNativeOverlayPointerActivity,
         );
       }
       if (defaultTargetPlatform == TargetPlatform.macOS) {
@@ -542,16 +545,28 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
     HapticFeedback.lightImpact();
   }
 
-  void _handleMouseMove(PointerEvent event) {
+  bool _handlePointerActivity() {
+    if (!mounted) {
+      return false;
+    }
     final videoState = Provider.of<VideoPlayerState>(context, listen: false);
-    if (!videoState.hasVideo) return;
+    if (!videoState.hasVideo) return false;
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final controlsAlreadyVisible = videoState.showControls && _isMouseVisible;
+    if (controlsAlreadyVisible && nowMs - _lastPointerActivityMs < 150) {
+      return false;
+    }
+    _lastPointerActivityMs = nowMs;
 
     if (!_isMouseVisible) {
       setState(() {
         _isMouseVisible = true;
       });
     }
-    videoState.setShowControls(true);
+    if (!videoState.showControls) {
+      videoState.setShowControls(true);
+    }
 
     _mouseMoveTimer?.cancel();
     final hideDelay = videoState.instantHidePlayerUiEnabled
@@ -565,6 +580,33 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
         videoState.setShowControls(false);
       }
     });
+    return true;
+  }
+
+  void _handleWindowsNativeOverlayPointerActivity(PointerEvent event) {
+    if (!mounted) {
+      return;
+    }
+    final videoState = Provider.of<VideoPlayerState>(context, listen: false);
+    final showControlsBefore = videoState.showControls;
+    final mouseVisibleBefore = _isMouseVisible;
+    final processed = _handlePointerActivity();
+    if (processed && _windowsNativeOverlayPointerLogCount < 80) {
+      _windowsNativeOverlayPointerLogCount += 1;
+      debugPrint(
+        '[VideoPlayerUI] WINDOWS_NATIVE_OVERLAY_POINTER_ACTIVITY '
+        'type=${event.runtimeType} hasVideo=${videoState.hasVideo} '
+        'processed=$processed '
+        'showControlsBefore=$showControlsBefore '
+        'showControlsAfter=${videoState.showControls} '
+        'mouseVisibleBefore=$mouseVisibleBefore '
+        'mouseVisibleAfter=$_isMouseVisible',
+      );
+    }
+  }
+
+  void _handleMouseMove(PointerEvent event) {
+    _handlePointerActivity();
   }
 
   void _handleMouseExit(PointerExitEvent event) {
