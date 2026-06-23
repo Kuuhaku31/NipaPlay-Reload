@@ -9,9 +9,23 @@ import 'package:nipaplay/utils/platform_utils.dart';
 const int _windowHostedPlatformSurfaceId = -1;
 const MethodChannel _macOSNativeVideoChannel =
     MethodChannel('nipaplay/macos_native_video');
+const MethodChannel _windowsNativeVideoChannel =
+    MethodChannel('nipaplay/windows_native_video');
 final bool _macOSHdrExitTraceEnabled = !kIsWeb &&
-    defaultTargetPlatform == TargetPlatform.macOS &&
-    Platform.environment['NIPAPLAY_MACOS_HDR_EXIT_TRACE'] == '1';
+    (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows) &&
+    (Platform.environment['NIPAPLAY_MACOS_HDR_EXIT_TRACE'] == '1' ||
+        Platform.environment['NIPAPLAY_WINDOWS_HDR_EXIT_TRACE'] == '1');
+
+bool get _isWindowHostedNativeVideoPlatform =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows);
+
+MethodChannel get _platformNativeVideoChannel =>
+    defaultTargetPlatform == TargetPlatform.windows
+        ? _windowsNativeVideoChannel
+        : _macOSNativeVideoChannel;
 
 void _logMacOSHdrExitTrace(String message) {
   if (_macOSHdrExitTraceEnabled) {
@@ -269,7 +283,7 @@ class _MacOSWindowNativeVideoOverlaySurfaceState
     if (!mounted ||
         _isBound ||
         !widget.player.prefersPlatformVideoSurface ||
-        defaultTargetPlatform != TargetPlatform.macOS) {
+        !_isWindowHostedNativeVideoPlatform) {
       return;
     }
 
@@ -317,8 +331,8 @@ class _MacOSWindowNativeVideoOverlaySurfaceState
     bool force = false,
   }) async {
     if (kIsWeb ||
-        defaultTargetPlatform != TargetPlatform.macOS ||
-        !Platform.isMacOS) {
+        !_isWindowHostedNativeVideoPlatform ||
+        (!Platform.isMacOS && !Platform.isWindows)) {
       return;
     }
 
@@ -360,7 +374,7 @@ class _MacOSWindowNativeVideoOverlaySurfaceState
     }
 
     try {
-      await _macOSNativeVideoChannel.invokeMethod<void>(
+      await _platformNativeVideoChannel.invokeMethod<void>(
         'setOverlayFrame',
         <String, dynamic>{
           'viewId': _windowHostedPlatformSurfaceId,
@@ -385,7 +399,7 @@ class _MacOSWindowNativeVideoOverlaySurfaceState
       'hideOverlayFrame state=${identityHashCode(this)} label=${widget.debugLabel}',
     );
     try {
-      await _macOSNativeVideoChannel.invokeMethod<void>(
+      await _platformNativeVideoChannel.invokeMethod<void>(
         'setOverlayFrame',
         <String, dynamic>{
           'viewId': _windowHostedPlatformSurfaceId,
@@ -408,7 +422,7 @@ class _MacOSWindowNativeVideoOverlaySurfaceState
   @override
   Widget build(BuildContext context) {
     if (kIsWeb ||
-        defaultTargetPlatform != TargetPlatform.macOS ||
+        !_isWindowHostedNativeVideoPlatform ||
         !widget.player.prefersPlatformVideoSurface) {
       return const SizedBox.shrink();
     }

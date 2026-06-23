@@ -111,8 +111,9 @@ final GlobalKey<State<DefaultTabController>> tabControllerKey =
 
 bool get _macosHdrVideoOnlyMode {
   return !kIsWeb &&
-      Platform.isMacOS &&
-      Platform.environment['NIPAPLAY_MACOS_HDR_VIDEO_ONLY'] == '1';
+      (Platform.isMacOS || Platform.isWindows) &&
+      (Platform.environment['NIPAPLAY_MACOS_HDR_VIDEO_ONLY'] == '1' ||
+          Platform.environment['NIPAPLAY_WINDOWS_HDR_VIDEO_ONLY'] == '1');
 }
 
 Alignment _resolveStartupWindowAlignment(

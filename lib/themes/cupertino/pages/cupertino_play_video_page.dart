@@ -551,10 +551,15 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
         ? (videoState.player.buildPlatformVideoSurface(
               debugLabel: videoState.currentVideoPath?.split('/').last,
             ) ??
-            MacOSNativeVideoView(
-              player: videoState.player,
-              debugLabel: videoState.currentVideoPath?.split('/').last,
-            ))
+            (defaultTargetPlatform == TargetPlatform.windows
+                ? MacOSWindowNativeVideoOverlaySurface(
+                    player: videoState.player,
+                    debugLabel: videoState.currentVideoPath?.split('/').last,
+                  )
+                : MacOSNativeVideoView(
+                    player: videoState.player,
+                    debugLabel: videoState.currentVideoPath?.split('/').last,
+                  )))
         : null;
     final hasVideo = videoState.hasVideo &&
         (kIsWeb ||

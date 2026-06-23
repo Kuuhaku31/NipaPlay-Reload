@@ -207,15 +207,28 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
   }
 
   bool get _isMacOSHdrVideoOnlyEnabled {
-    return _macosHdrVideoOnly ||
-        Platform.environment['NIPAPLAY_MACOS_HDR_VIDEO_ONLY'] == '1';
+    return !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows) &&
+        (_macosHdrVideoOnly ||
+            Platform.environment['NIPAPLAY_MACOS_HDR_VIDEO_ONLY'] == '1' ||
+            Platform.environment['NIPAPLAY_WINDOWS_HDR_VIDEO_ONLY'] == '1');
   }
 
   bool get _shouldUseMacOSWindowHostedVideoOverlay {
-    return !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.macOS &&
-        Platform.environment['NIPAPLAY_MACOS_HDR_USE_APPKIT_VIEW'] != '1' &&
-        Platform.environment['NIPAPLAY_DISABLE_MACOS_WINDOW_OVERLAY'] != '1';
+    if (kIsWeb) {
+      return false;
+    }
+    if (defaultTargetPlatform == TargetPlatform.macOS) {
+      return Platform.environment['NIPAPLAY_MACOS_HDR_USE_APPKIT_VIEW'] !=
+              '1' &&
+          Platform.environment['NIPAPLAY_DISABLE_MACOS_WINDOW_OVERLAY'] != '1';
+    }
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return Platform.environment['NIPAPLAY_DISABLE_WINDOWS_WINDOW_OVERLAY'] !=
+          '1';
+    }
+    return false;
   }
 
   double getFontSize(VideoPlayerState videoState) {
@@ -247,11 +260,14 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
           onFrameRectChanged: _handleMacOSWindowHostedVideoRectChanged,
         );
       }
-      return MacOSNativeVideoView(
-        player: videoState.player,
-        debugLabel: videoState.currentVideoPath?.split('/').last,
-        onPlatformViewIdChanged: _updateMacOSNativeVideoViewId,
-      );
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        return MacOSNativeVideoView(
+          player: videoState.player,
+          debugLabel: videoState.currentVideoPath?.split('/').last,
+          onPlatformViewIdChanged: _updateMacOSNativeVideoViewId,
+        );
+      }
+      return const SizedBox.shrink();
     }
     if (textureId == null || textureId < 0) {
       return const SizedBox.shrink();
@@ -307,7 +323,8 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
 
   bool _shouldKeepMacOSNativeVideoSurface(VideoPlayerState videoState) {
     return !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.macOS &&
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows) &&
         videoState.player.prefersPlatformVideoSurface &&
         videoState.currentVideoPath != null &&
         videoState.status != PlayerStatus.idle &&
@@ -870,7 +887,6 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
             }
 
             if (_isMacOSHdrVideoOnlyEnabled &&
-                defaultTargetPlatform == TargetPlatform.macOS &&
                 videoState.player.prefersPlatformVideoSurface) {
               return _buildVideoSurfaceStage(videoState, textureId);
             }
@@ -1107,4 +1123,3 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
     );
   }
 }
-

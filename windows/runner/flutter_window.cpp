@@ -26,6 +26,9 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  windows_native_video_plugin_ = std::make_unique<WindowsNativeVideoPlugin>(
+      GetHandle(), flutter_controller_->view()->GetNativeWindow(),
+      flutter_controller_->engine()->messenger());
   DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
     auto* flutter_view_controller =
         reinterpret_cast<flutter::FlutterViewController*>(controller);
@@ -47,6 +50,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (windows_native_video_plugin_) {
+    windows_native_video_plugin_->Destroy();
+    windows_native_video_plugin_ = nullptr;
+  }
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

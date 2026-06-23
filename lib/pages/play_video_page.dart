@@ -46,8 +46,10 @@ class _PlayVideoPageState extends State<PlayVideoPage> {
 
   bool get _isMacOSHdrVideoOnlyEnabled {
     return !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.macOS &&
-        Platform.environment['NIPAPLAY_MACOS_HDR_VIDEO_ONLY'] == '1';
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows) &&
+        (Platform.environment['NIPAPLAY_MACOS_HDR_VIDEO_ONLY'] == '1' ||
+            Platform.environment['NIPAPLAY_WINDOWS_HDR_VIDEO_ONLY'] == '1');
   }
 
   bool get _isMacOSHdrTransparentFlutterEnabled {

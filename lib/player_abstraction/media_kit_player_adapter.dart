@@ -22,8 +22,16 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
   final String? _androidAudioOutput;
   static const int _defaultBufferSize = 32 * 1024 * 1024;
   static const String _hdrValidationFlag = 'NIPAPLAY_MACOS_HDR_VALIDATE';
+  static const String _windowsHdrValidationFlag =
+      'NIPAPLAY_WINDOWS_HDR_VALIDATE';
   static const MethodChannel _macOSNativeVideoChannel =
       MethodChannel('nipaplay/macos_native_video');
+  static const MethodChannel _windowsNativeVideoChannel =
+      MethodChannel('nipaplay/windows_native_video');
+
+  static MethodChannel get _platformNativeVideoChannel => Platform.isWindows
+      ? _windowsNativeVideoChannel
+      : _macOSNativeVideoChannel;
 
   static void setMpvLogLevelNone() {
     _disableMpvLogs = true;
@@ -64,16 +72,24 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
   static bool _shouldEnableMpvDiagnostics() {
     return _envFlagEnabled('NIPAPLAY_ENABLE_MPV_LOGS') ||
         _envFlagEnabled(_hdrValidationFlag) ||
+        _envFlagEnabled(_windowsHdrValidationFlag) ||
         _envString('NIPAPLAY_MPV_LOG_FILE') != null ||
         _envString('NIPAPLAY_MPV_MSG_LEVEL') != null ||
         _envString('NIPAPLAY_MPV_LOG_LEVEL') != null;
   }
 
-  static bool _shouldUseMacOSHdrOutputPath() {
-    return Platform.isMacOS &&
-        !_envFlagEnabled('NIPAPLAY_DISABLE_MACOS_HDR') &&
-        (_envFlagEnabled(_hdrValidationFlag) ||
-            _shouldUseMacOSNativeVideoSurface());
+  static bool _shouldUsePlatformHdrOutputPath() {
+    if (Platform.isMacOS) {
+      return !_envFlagEnabled('NIPAPLAY_DISABLE_MACOS_HDR') &&
+          (_envFlagEnabled(_hdrValidationFlag) ||
+              _shouldUsePlatformNativeVideoSurface());
+    }
+    if (Platform.isWindows) {
+      return !_envFlagEnabled('NIPAPLAY_DISABLE_WINDOWS_HDR') &&
+          (_envFlagEnabled(_windowsHdrValidationFlag) ||
+              _shouldUsePlatformNativeVideoSurface());
+    }
+    return false;
   }
 
   static MPVLogLevel _resolveMpvLogLevel() {
@@ -106,7 +122,10 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     if (env != null) {
       return env;
     }
-    if (allowAutomaticMacOSHdrOverride && _shouldUseMacOSHdrOutputPath()) {
+    if (allowAutomaticMacOSHdrOverride && _shouldUsePlatformHdrOutputPath()) {
+      if (Platform.isWindows) {
+        return 'd3d11va,dxva2,auto';
+      }
       return 'videotoolbox,auto';
     }
     return null;
@@ -161,17 +180,29 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     return false;
   }
 
-  static bool _shouldUseMacOSNativeVideoSurface() {
-    if (!Platform.isMacOS) {
+  static bool _shouldUsePlatformNativeVideoSurface() {
+    if (!Platform.isMacOS && !Platform.isWindows) {
       return false;
     }
-    if (_envFlagEnabled('NIPAPLAY_DISABLE_MACOS_NATIVE_VIDEO')) {
+    if (Platform.isMacOS &&
+        _envFlagEnabled('NIPAPLAY_DISABLE_MACOS_NATIVE_VIDEO')) {
       return false;
     }
-    if (_envFlagEnabled('NIPAPLAY_ENABLE_MACOS_NATIVE_VIDEO')) {
+    if (Platform.isWindows &&
+        (_envFlagEnabled('NIPAPLAY_DISABLE_WINDOWS_NATIVE_VIDEO') ||
+            _envFlagEnabled('NIPAPLAY_DISABLE_WINDOWS_HDR'))) {
+      return false;
+    }
+    if (Platform.isMacOS &&
+        _envFlagEnabled('NIPAPLAY_ENABLE_MACOS_NATIVE_VIDEO')) {
       return true;
     }
-    if (_envFlagEnabled(_hdrValidationFlag)) {
+    if (Platform.isWindows &&
+        _envFlagEnabled('NIPAPLAY_ENABLE_WINDOWS_NATIVE_VIDEO')) {
+      return true;
+    }
+    if (_envFlagEnabled(_hdrValidationFlag) ||
+        _envFlagEnabled(_windowsHdrValidationFlag)) {
       return true;
     }
     return _macOSNativeVideoPreference;
@@ -254,7 +285,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
   MediaKitPlayerAdapter({int? bufferSize, String? androidAudioOutput})
       : _mpvDiagnosticsEnabled = _shouldEnableMpvDiagnostics(),
         _enableHardwareAcceleration = !_shouldDisableHardwareAcceleration(),
-        _prefersPlatformVideoSurface = _shouldUseMacOSNativeVideoSurface(),
+        _prefersPlatformVideoSurface = _shouldUsePlatformNativeVideoSurface(),
         _androidAudioOutput = androidAudioOutput,
         _player = Player(
           configuration: PlayerConfiguration(
@@ -272,10 +303,10 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
           ),
         ) {
     _applyMpvLogLevelOverride();
-    _applyMacOSHdrOutputOptions();
+    _applyPlatformHdrOutputOptions();
     _applyMpvDiagnosticOptions();
     _applyAndroidAudioOutput();
-    _bootstrapMacOSPlatformVideoSurface();
+    _bootstrapPlatformVideoSurface();
     if (!_prefersPlatformVideoSurface) {
       _controller = VideoController(
         _player,
@@ -309,12 +340,13 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
   }
 
   void _applyAndroidAudioOutput() {
-    if (_androidAudioOutput == null ||
+    final audioOutput = _androidAudioOutput;
+    if (audioOutput == null ||
         defaultTargetPlatform != TargetPlatform.android) {
       return;
     }
-    _setMpvPropertyOption('ao', _androidAudioOutput!);
-    debugPrint('MediaKit: Android 音频后端设置为 $_androidAudioOutput');
+    _setMpvPropertyOption('ao', audioOutput);
+    debugPrint('MediaKit: Android 音频后端设置为 $audioOutput');
   }
 
   void _applyMpvDiagnosticOptions() {
@@ -322,7 +354,8 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
       return;
     }
 
-    final defaultMsgLevel = _envFlagEnabled(_hdrValidationFlag)
+    final defaultMsgLevel = (_envFlagEnabled(_hdrValidationFlag) ||
+            _envFlagEnabled(_windowsHdrValidationFlag))
         ? 'all=warn,cplayer=debug,vd=debug,vf=v,vo=debug,vo/gpu-next=v,gpu=v,mac=v,cocoacb=v,ffmpeg=warn,ffmpeg/demuxer=warn,lavf=warn,demux=warn,file=warn,playlist=warn'
         : 'all=debug';
 
@@ -349,27 +382,48 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     }
   }
 
-  void _applyMacOSHdrOutputOptions() {
-    if (!_shouldUseMacOSHdrOutputPath()) {
+  void _applyPlatformHdrOutputOptions() {
+    if (!_shouldUsePlatformHdrOutputPath()) {
       return;
     }
 
-    final options = _prefersPlatformVideoSurface
-        ? <String, String>{
-            'hdr-compute-peak':
-                _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
-          }
-        : <String, String>{
-            'gpu-api': _envString('NIPAPLAY_MPV_GPU_API') ?? 'vulkan',
-            'gpu-context': _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'macvk',
-            'target-colorspace-hint':
-                _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'yes',
-            'target-colorspace-hint-mode':
-                _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ??
-                    'source',
-            'hdr-compute-peak':
-                _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
-          };
+    final Map<String, String> options;
+    if (Platform.isWindows) {
+      options = <String, String>{
+        'vo': _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
+        'gpu-api': _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
+        'gpu-context': _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
+        'd3d11-output-mode':
+            _envString('NIPAPLAY_MPV_D3D11_OUTPUT_MODE') ?? 'window',
+        'd3d11-output-format':
+            _envString('NIPAPLAY_MPV_D3D11_OUTPUT_FORMAT') ?? 'auto',
+        'd3d11-output-csp':
+            _envString('NIPAPLAY_MPV_D3D11_OUTPUT_CSP') ?? 'auto',
+        'target-colorspace-hint':
+            _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'auto',
+        'target-colorspace-hint-mode':
+            _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ?? 'target',
+        'hdr-compute-peak':
+            _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
+      };
+    } else {
+      options = _prefersPlatformVideoSurface
+          ? <String, String>{
+              'hdr-compute-peak':
+                  _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
+            }
+          : <String, String>{
+              'gpu-api': _envString('NIPAPLAY_MPV_GPU_API') ?? 'vulkan',
+              'gpu-context': _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'macvk',
+              'target-colorspace-hint':
+                  _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'yes',
+              'target-colorspace-hint-mode':
+                  _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ??
+                      'source',
+              'hdr-compute-peak':
+                  _envString('NIPAPLAY_MPV_HDR_COMPUTE_PEAK') ?? 'auto',
+            };
+    }
 
     for (final entry in options.entries) {
       _setMpvPropertyOption(entry.key, entry.value,
@@ -377,14 +431,26 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     }
   }
 
-  void _bootstrapMacOSPlatformVideoSurface() {
+  void _bootstrapPlatformVideoSurface() {
     if (!_prefersPlatformVideoSurface) {
       return;
     }
 
-    _setMpvPropertyOption('vo', 'libmpv', log: _mpvDiagnosticsEnabled);
-    _setMpvPropertyOption('wid', '0', log: _mpvDiagnosticsEnabled);
-    _setMpvPropertyOption('force-window', 'no', log: _mpvDiagnosticsEnabled);
+    if (Platform.isWindows) {
+      _setMpvPropertyOption('vo', _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
+          log: _mpvDiagnosticsEnabled);
+      _setMpvPropertyOption(
+          'gpu-api', _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
+          log: _mpvDiagnosticsEnabled);
+      _setMpvPropertyOption(
+          'gpu-context', _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
+          log: _mpvDiagnosticsEnabled);
+      _setMpvPropertyOption('force-window', 'no', log: _mpvDiagnosticsEnabled);
+    } else {
+      _setMpvPropertyOption('vo', 'libmpv', log: _mpvDiagnosticsEnabled);
+      _setMpvPropertyOption('wid', '0', log: _mpvDiagnosticsEnabled);
+      _setMpvPropertyOption('force-window', 'no', log: _mpvDiagnosticsEnabled);
+    }
     _setMpvPropertyOption('gpu-hwdec-interop', 'auto',
         log: _mpvDiagnosticsEnabled);
   }
@@ -406,6 +472,19 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         debugPrint('MediaKit HDR诊断: 设置 mpv $name 失败: $e');
       }
     }
+  }
+
+  static int? _intFromNativeValue(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is double) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
   }
 
   void _initializeHardwareDecoding() {
@@ -1679,7 +1758,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         _pendingPlatformMedia = media;
         if (_mpvDiagnosticsEnabled) {
           debugPrint(
-            'MediaKit HDR诊断: defer media open until macOS native video surface attaches',
+            'MediaKit HDR诊断: defer media open until platform native video surface attaches',
           );
         }
       } else {
@@ -1806,8 +1885,9 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
   void _scheduleMacOSHdrDiagnostics() {
     if (!_mpvDiagnosticsEnabled ||
-        !Platform.isMacOS ||
-        !_envFlagEnabled(_hdrValidationFlag)) {
+        (!Platform.isMacOS && !Platform.isWindows) ||
+        (!_envFlagEnabled(_hdrValidationFlag) &&
+            !_envFlagEnabled(_windowsHdrValidationFlag))) {
       return;
     }
 
@@ -2212,8 +2292,9 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
   Future<void> _dumpMacOSHdrDiagnostics(String phase) async {
     if (!_mpvDiagnosticsEnabled ||
-        !Platform.isMacOS ||
-        !_envFlagEnabled(_hdrValidationFlag) ||
+        (!Platform.isMacOS && !Platform.isWindows) ||
+        (!_envFlagEnabled(_hdrValidationFlag) &&
+            !_envFlagEnabled(_windowsHdrValidationFlag)) ||
         _isDisposed) {
       return;
     }
@@ -2318,16 +2399,26 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         (platformViewId != null && platformViewId >= 0)
             ? platformViewId
             : _windowHostedPlatformSurfaceId;
+    var resolvedViewHandle = viewHandle;
+    if (Platform.isWindows && resolvedViewHandle <= 0) {
+      final handles =
+          await _platformNativeVideoChannel.invokeMapMethod<String, dynamic>(
+        'getViewHandles',
+        <String, dynamic>{'viewId': resolvedPlatformViewId},
+      );
+      resolvedViewHandle =
+          _intFromNativeValue(handles?['viewHandle']) ?? resolvedViewHandle;
+    }
 
     final isSameBinding = _attachedPlatformViewId == resolvedPlatformViewId &&
-        _attachedPlatformViewHandle == viewHandle &&
+        _attachedPlatformViewHandle == resolvedViewHandle &&
         _attachedPlatformWindowHandle == windowHandle;
     if (isSameBinding) {
       return;
     }
 
     _attachedPlatformViewId = resolvedPlatformViewId;
-    _attachedPlatformViewHandle = viewHandle;
+    _attachedPlatformViewHandle = resolvedViewHandle;
     _attachedPlatformWindowHandle = windowHandle;
     final bindingGeneration = ++_platformVideoSurfaceBindingGeneration;
 
@@ -2344,13 +2435,53 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         throw StateError('No valid libmpv player handle available.');
       }
 
-      await platform.setProperty?.call('vo', 'libmpv');
-      await platform.setProperty?.call('wid', '0');
-      await platform.setProperty?.call('force-window', 'no');
+      if (Platform.isWindows) {
+        if (resolvedViewHandle <= 0) {
+          throw StateError('No valid Windows native video HWND available.');
+        }
+        await platform.setProperty?.call(
+          'vo',
+          _envString('NIPAPLAY_MPV_VO') ?? 'gpu-next',
+        );
+        await platform.setProperty?.call(
+          'gpu-api',
+          _envString('NIPAPLAY_MPV_GPU_API') ?? 'd3d11',
+        );
+        await platform.setProperty?.call(
+          'gpu-context',
+          _envString('NIPAPLAY_MPV_GPU_CONTEXT') ?? 'd3d11',
+        );
+        await platform.setProperty?.call('wid', '$resolvedViewHandle');
+        await platform.setProperty?.call('force-window', 'yes');
+        await platform.setProperty?.call(
+          'd3d11-output-mode',
+          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_MODE') ?? 'window',
+        );
+        await platform.setProperty?.call(
+          'd3d11-output-format',
+          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_FORMAT') ?? 'auto',
+        );
+        await platform.setProperty?.call(
+          'd3d11-output-csp',
+          _envString('NIPAPLAY_MPV_D3D11_OUTPUT_CSP') ?? 'auto',
+        );
+        await platform.setProperty?.call(
+          'target-colorspace-hint',
+          _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT') ?? 'auto',
+        );
+        await platform.setProperty?.call(
+          'target-colorspace-hint-mode',
+          _envString('NIPAPLAY_MPV_TARGET_COLORSPACE_HINT_MODE') ?? 'target',
+        );
+      } else {
+        await platform.setProperty?.call('vo', 'libmpv');
+        await platform.setProperty?.call('wid', '0');
+        await platform.setProperty?.call('force-window', 'no');
+      }
       await platform.setProperty?.call('gpu-hwdec-interop', 'auto');
       await platform.setProperty?.call('sub-use-margins', 'no');
       await platform.setProperty?.call('sub-scale-with-window', 'yes');
-      await _macOSNativeVideoChannel.invokeMethod<void>(
+      await _platformNativeVideoChannel.invokeMethod<void>(
         'attachPlayer',
         <String, dynamic>{
           'viewId': resolvedPlatformViewId,
@@ -2369,9 +2500,10 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
       if (_mpvDiagnosticsEnabled) {
         debugPrint(
-          'MediaKit HDR诊断: attach macOS native video surface '
+          'MediaKit HDR诊断: attach platform native video surface '
           'viewId=$resolvedPlatformViewId playerHandle=$playerHandle '
-          'renderer=libmpv-opengl',
+          'viewHandle=$resolvedViewHandle '
+          'renderer=${Platform.isWindows ? 'gpu-next/d3d11' : 'libmpv-opengl'}',
         );
       }
       if (Platform.isMacOS &&
@@ -2398,7 +2530,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         _attachedPlatformWindowHandle = null;
         _platformVideoSurfaceBindingGeneration += 1;
       }
-      debugPrint('MediaKit: 绑定 macOS 原生视频面失败: $e');
+      debugPrint('MediaKit: 绑定平台原生视频面失败: $e');
       rethrow;
     }
   }
@@ -2431,21 +2563,24 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
 
     final detachFuture = () async {
       try {
+        final dynamic platform = _player.platform;
+        if (Platform.isWindows && platform != null) {
+          await platform.setProperty?.call('wid', '-1');
+          await platform.setProperty?.call('force-window', 'no');
+        }
         if (viewId != null) {
-          await _macOSNativeVideoChannel.invokeMethod<void>(
+          await _platformNativeVideoChannel.invokeMethod<void>(
             'detachPlayer',
             <String, dynamic>{'viewId': viewId},
           );
         }
-        final dynamic platform = _player.platform;
-        if (platform == null) {
-          return;
+        if (platform != null) {
+          await platform.setProperty?.call('vo', 'libmpv');
+          await platform.setProperty?.call('wid', '0');
+          await platform.setProperty?.call('force-window', 'no');
         }
-        await platform.setProperty?.call('vo', 'libmpv');
-        await platform.setProperty?.call('wid', '0');
-        await platform.setProperty?.call('force-window', 'no');
       } catch (e) {
-        debugPrint('MediaKit: 解绑 macOS 原生视频面失败: $e');
+        debugPrint('MediaKit: 解绑平台原生视频面失败: $e');
       }
     }();
 
