@@ -84,7 +84,7 @@ dependencies:
   erika_flutter:
     git:
       url: https://github.com/AimesSoft/Erika.git
-      ref: a2144fe7a30563b00614592410d58c0965584df1
+      ref: 01afdb84755d78bf1375c0d34a717d2eb5b1677b
       path: packages/erika_flutter
   qr_flutter: ^4.1.0  # 用于生成二维码
   qr_code_scanner_plus: ^2.0.12
