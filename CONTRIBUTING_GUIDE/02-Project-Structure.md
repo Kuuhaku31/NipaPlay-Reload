@@ -16,10 +16,10 @@
 
 你可以把它理解成：
 
-*   `themes/` 是”你看到的界面”
-*   `VideoPlayerState` 是”控制播放的一层总调度”
-*   `player_abstraction/` 和 `danmaku_abstraction/` 是”真正对接底层内核的一层适配器”
-*   `plugins/` 是”用户和社区可以自由扩展功能的入口”
+*   `themes/` 是“你看到的界面”
+*   `VideoPlayerState` 是“控制播放的一层总调度”
+*   `player_abstraction/` 和 `danmaku_abstraction/` 是“真正对接底层内核的一层适配器”
+*   `plugins/` 是“用户和社区可以自由扩展功能的入口”
 
 ## 顶层目录速览
 
@@ -105,7 +105,7 @@
         *   `media_kit_player_adapter.dart`
         *   `video_player_adapter.dart`
     *   这层的意义是：UI 和 `VideoPlayerState` 不直接依赖某个具体播放器 SDK，而是通过统一接口工作。这样我们才能支持自研的 [Erika](https://github.com/AimesSoft/Erika) 内核（Rust/Metal）、FVP(MDK)、Media Kit(libmpv)、Video Player 等不同内核。
-    *   **Erika 是当前重点发展的自研内核**，它的代码在独立仓库 [AimesSoft/Erika](https://github.com/AimesSoft/Erika)，通过 `packages/erika_flutter/` 以 Flutter 插件形式接入 NipaPlay。
+    *   **Erika 是当前重点发展的自研内核**，它的代码在独立仓库 [AimesSoft/Erika](https://github.com/AimesSoft/Erika)，并以 git dependency 的形式引入其中的 `packages/erika_flutter/` Flutter 插件接入 NipaPlay。
 
 *   `lib/danmaku_abstraction/`、`lib/danmaku_gpu/`、`lib/danmaku_next/`、`lib/danmaku_dfm/`
     *   这是弹幕系统的核心区域。项目支持多种弹幕引擎：
@@ -126,8 +126,8 @@
     *   插件可以操控播放器、弹幕、UI、存储等，详见 `Documentation/js-plugin-api.md`。
 
 *   `lib/services/`
-    *   处理外部交互和”脏活累活”，例如网络请求、弹弹play、Jellyfin/Emby/WebDAV、日志、文件选择、播放同步、AI 防剧透等。
-    *   如果你要改的是”和外部服务打交道”的逻辑，优先看这里。
+    *   处理外部交互和“脏活累活”，例如网络请求、弹弹play、Jellyfin/Emby/WebDAV、日志、文件选择、播放同步、AI 防剧透等。
+    *   如果你要改的是“和外部服务打交道”的逻辑，优先看这里。
 
 *   `lib/providers/`
     *   放全局可观察状态，例如设置、主题、媒体服务器账号、转码参数等。

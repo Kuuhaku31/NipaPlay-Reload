@@ -65,6 +65,8 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
   OverlayEntry? _settingsOverlay;
   final GlobalKey _settingsButtonKey = GlobalKey();
   bool _isExiting = false;
+  int _windowsNativeOverlayPointerLogCount = 0;
+  int _lastWindowsNativeOverlayPointerActivityMs = 0;
 
   bool _isRepeatableShortcut(LogicalKeyboardKey key) {
     return key == LogicalKeyboardKey.arrowLeft ||
@@ -519,14 +521,42 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
     );
   }
 
+  void _handleWindowsNativeOverlayPointerActivity(PointerEvent event) {
+    if (!mounted) {
+      return;
+    }
+    final videoState = Provider.of<VideoPlayerState>(context, listen: false);
+    if (!videoState.hasVideo) {
+      return;
+    }
+    final showControlsBefore = videoState.showControls;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (showControlsBefore &&
+        nowMs - _lastWindowsNativeOverlayPointerActivityMs < 250) {
+      return;
+    }
+    _lastWindowsNativeOverlayPointerActivityMs = nowMs;
+    videoState.resetHideControlsTimer();
+    if (_windowsNativeOverlayPointerLogCount < 80) {
+      _windowsNativeOverlayPointerLogCount += 1;
+      debugPrint(
+        '[CupertinoPlayVideoPage] WINDOWS_NATIVE_OVERLAY_POINTER_ACTIVITY '
+        'type=${event.runtimeType} showControlsBefore=$showControlsBefore '
+        'showControlsAfter=${videoState.showControls}',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<VideoPlayerState>(
       builder: (context, videoState, _) {
+        final usesWindowHostedVideoSurface = videoState.hasVideo &&
+            videoState.player.usesWindowOverlayVideoSurface;
         return WillPopScope(
           onWillPop: () => _handleSystemBack(videoState),
           child: CupertinoPageScaffold(
-            backgroundColor: videoState.player.usesWindowOverlayVideoSurface
+            backgroundColor: usesWindowHostedVideoSurface
                 ? Colors.transparent
                 : CupertinoColors.black,
             child: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -709,6 +739,9 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
         player: videoState.player,
         debugLabel: debugLabel,
         onFrameRectChanged: videoState.setWindowHostedVideoRect,
+        onPointerActivity: defaultTargetPlatform == TargetPlatform.windows
+            ? _handleWindowsNativeOverlayPointerActivity
+            : null,
       );
     }
 

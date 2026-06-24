@@ -90,7 +90,8 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
           if (_isCapturingFrame) {
             _isCapturingFrame = false;
             _screenshotCompleter = null;
-            _logMacOSHdrResetTrace('force reset screenshot state after timeout');
+            _logMacOSHdrResetTrace(
+                'force reset screenshot state after timeout');
           }
         }
       }
@@ -446,6 +447,7 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
           // Hint mpv to pause immediately on Windows to reduce control latency.
           player.setProperty('pause', 'yes');
         } catch (_) {}
+        _setStatus(PlayerStatus.paused, message: '已暂停');
       }
 
       // 使用直接暂停方法，确保VideoPlayer插件能够暂停视频
@@ -482,8 +484,21 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
       }
 
       _saveCurrentPositionToHistory();
-      // 在暂停时触发截图（Windows+MediaKit 延迟，避免与 mpv 暂停竞争）
-      if (isWindowsMediaKit) {
+      final bool deferInteractiveThumbnailCapture =
+          _usesWindowsPlatformVideoSurface;
+      if (deferInteractiveThumbnailCapture) {
+        // 在暂停时触发截图（Windows+MediaKit 延迟，避免与 mpv 暂停竞争）
+        if (_currentThumbnailPath == null || _currentThumbnailPath!.isEmpty) {
+          Future.delayed(const Duration(seconds: 3), () {
+            if (_status == PlayerStatus.paused &&
+                !_isCapturingFrame &&
+                (_currentThumbnailPath == null ||
+                    _currentThumbnailPath!.isEmpty)) {
+              _captureConditionalScreenshot("暂停时");
+            }
+          });
+        }
+      } else if (isWindowsMediaKit) {
         Future.delayed(const Duration(milliseconds: 400), () {
           if (_status == PlayerStatus.paused) {
             _captureConditionalScreenshot("暂停时");
@@ -525,6 +540,9 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
     if (hasVideo &&
         (_status == PlayerStatus.paused || _status == PlayerStatus.ready)) {
       _lastPlaybackStartMs = DateTime.now().millisecondsSinceEpoch;
+      if (isWindowsMediaKit) {
+        _setStatus(PlayerStatus.playing, message: '开始播放');
+      }
       // 使用直接播放方法，确保VideoPlayer插件能够播放视频
       player.playDirectly().then((_) {
         //debugPrint('[VideoPlayerState] playDirectly() 调用成功');
@@ -551,10 +569,12 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
       // 在首次播放时进行截图
       if (!_hasInitialScreenshot) {
         _hasInitialScreenshot = true;
-        // 延迟一秒再截图，确保视频已经开始显示
-        Future.delayed(const Duration(seconds: 1), () {
-          _captureConditionalScreenshot("首次播放时");
-        });
+        if (!_usesWindowsPlatformVideoSurface) {
+          // 延迟一秒再截图，确保视频已经开始显示
+          Future.delayed(const Duration(seconds: 1), () {
+            _captureConditionalScreenshot("首次播放时");
+          });
+        }
       }
       // 视频开始播放后更新解码器信息
       Future.delayed(const Duration(seconds: 1), () {
@@ -579,10 +599,38 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
         // 直接锚定到 playerMs 会导致弹幕跳变到错误时间点。
         // 使用暂停时的精确值确保弹幕从暂停位置无缝继续。
         if (_pausedPlaybackTimeMs != null) {
-          _smoothAnchorMs = _pausedPlaybackTimeMs!;
-          _smoothAnchorElapsedUs = 0; // Ticker 重启后 elapsed 从 0 开始
-          _lastRawPlayerMs = -1; // 保持 -1，让漂移修正自然校准
-          _pausedPlaybackTimeMs = null;
+          // ════════════════════════════════════════════════════════════════════
+          //  切集污染判定（2026-06-21）：丢弃可疑的 _pausedPlaybackTimeMs
+          // ════════════════════════════════════════════════════════════════════
+          // 正常暂停恢复：_pausedPlaybackTimeMs 是本集暂停位置，用作锚点无缝继续
+          // 切集污染：_pausedPlaybackTimeMs 是旧集末尾（_clearPreviousVideoState 漏清理时），
+          //   误用会导致 playbackTimeMs 卡在旧集末尾 → 弹幕查不到 → 后续突跌回弹
+          //   判定：_pausedPlaybackTimeMs > 新集 duration+1s（旧集末尾超过新集时长）
+          //         或 _pausedPlaybackTimeMs>1s 且 _position<100ms（旧集末尾值 + 新集开头位置）
+          final isSuspectEpisodeSwitch = _pausedPlaybackTimeMs! >
+                  _duration.inMilliseconds.toDouble() + 1000.0 ||
+              (_pausedPlaybackTimeMs! > 1000.0 &&
+                  _position.inMilliseconds < 100);
+          if (!kReleaseMode) {
+            debugPrint('[EP-SWITCH-DIAG] play() RESUME-FROM-PAUSE: '
+                'pausedPlaybackTimeMs=${_pausedPlaybackTimeMs!.toStringAsFixed(1)}ms '
+                'newDuration=${_duration.inMilliseconds}ms '
+                'newPosition=${_position.inMilliseconds}ms '
+                '← SUSPECT_EPISODE_SWITCH=$isSuspectEpisodeSwitch '
+                '${isSuspectEpisodeSwitch ? "丢弃旧集末尾污染值，走正常首帧锚定" : "正常暂停恢复，用作锚点"}');
+          }
+          if (isSuspectEpisodeSwitch) {
+            // 丢弃污染值，走正常首帧锚定（ticker 首帧锚定到 player.position=0）
+            _smoothAnchorMs = 0.0;
+            _smoothAnchorElapsedUs = 0;
+            _lastRawPlayerMs = -1;
+            _pausedPlaybackTimeMs = null;
+          } else {
+            _smoothAnchorMs = _pausedPlaybackTimeMs!;
+            _smoothAnchorElapsedUs = 0; // Ticker 重启后 elapsed 从 0 开始
+            _lastRawPlayerMs = -1; // 保持 -1，让漂移修正自然校准
+            _pausedPlaybackTimeMs = null;
+          }
         } else {
           _lastRawPlayerMs = -1;
         }
@@ -608,6 +656,30 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
   }
 
   void _clearPreviousVideoState() {
+    // ════════════════════════════════════════════════════════════════════
+    //  切集时清理平滑时钟锚点 + _pausedPlaybackTimeMs（2026-06-21）
+    // ════════════════════════════════════════════════════════════════════
+    // 原缺陷：_clearPreviousVideoState 不重置平滑时钟字段，旧集末尾位置残留。
+    // 切集时序：playNextEpisode→togglePlayPause→pause 保存 _pausedPlaybackTimeMs=旧集末尾
+    // → initializePlayer→_clearPreviousVideoState（此处）不清理
+    // → 新集 play() 暂停恢复路径误把 _pausedPlaybackTimeMs(旧集末尾) 当新集锚点
+    // → playbackTimeMs 卡在旧集末尾（clamp 到新集 duration）→ 弹幕查不到 → 后续突跌回弹
+    //
+    // 切集首个清理点同步重置所有平滑时钟字段 + _pausedPlaybackTimeMs
+    // 让新集 play() 走正常首帧锚定（锚定到 player.position=0），而非误用旧集末尾。
+    _playbackTimeMs.value = 0.0;
+    _smoothAnchorMs = 0.0;
+    _smoothAnchorElapsedUs = _lastElapsedUs; // 用当前 elapsed，非 0（0 是暂停恢复专用）
+    _seekTargetMs = null; // 切集非 seek 场景，无需 seek 保护
+    _lastRawPlayerMs = -1; // 重置，让下次 ticker 走首帧锚定
+    _anchorSetBySeek = false;
+    _pausedPlaybackTimeMs = null; // 清理旧集暂停保存值，避免新集 play() 误用
+    if (!kReleaseMode) {
+      debugPrint('[EP-SWITCH-DIAG] _clearPreviousVideoState ANCHOR RESET: '
+          'ptm=0.0 smoothAnchorMs=0.0 smoothAnchorElapsedUs=$_smoothAnchorElapsedUs '
+          'seekTargetMs=null lastRawPlayerMs=-1 pausedPlaybackTimeMs=null '
+          '← 切集锚点已清理，新集将走正常首帧锚定');
+    }
     _subtitleManager.clearExternalSubtitle(notifyListenersToo: false);
     _currentVideoPath = null;
     _currentActualPlayUrl = null; // 清除实际播放URL
@@ -668,14 +740,15 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
     _progress = 0.0;
     _duration = Duration.zero;
     _bufferedPositionMs = 0;
-      _playbackTimeMs.value = 0;
-      _lastRawPlayerMs = -1; // 重置平滑时钟
-      // ✅ P2-LOOP-RESTART 一致性修复：补齐锚点字段（与 seekTo() 保持一致）
-      _smoothAnchorMs = 0.0;
-      _smoothAnchorElapsedUs = 0;
-      _seekTargetMs = null; // [SEEK-TRACE] source=RESET-VIDEO-STATE — idle/stop 场景无需 seek 保护
-      _anchorSetBySeek = false; // idle/stop 场景锚点非 seek 设置
-      _lastPlaybackStartMs = 0;
+    _playbackTimeMs.value = 0;
+    _lastRawPlayerMs = -1; // 重置平滑时钟
+    // ✅ P2-LOOP-RESTART 一致性修复：补齐锚点字段（与 seekTo() 保持一致）
+    _smoothAnchorMs = 0.0;
+    _smoothAnchorElapsedUs = 0;
+    _seekTargetMs =
+        null; // [SEEK-TRACE] source=RESET-VIDEO-STATE — idle/stop 场景无需 seek 保护
+    _anchorSetBySeek = false; // idle/stop 场景锚点非 seek 设置
+    _lastPlaybackStartMs = 0;
     if (!_isErrorStopping) {
       // <<< MODIFIED HERE
       _error = null;
@@ -1320,15 +1393,18 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
       // 解除之前的宽高比锁定，以便自由设置窗口大小
       await windowManager.setAspectRatio(0);
 
-      final devicePixelRatio =
-          WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+      final devicePixelRatio = WidgetsBinding
+          .instance.platformDispatcher.views.first.devicePixelRatio;
 
       // 动态测量窗口偏移量：窗口尺寸(WINDOW RECT) - 内容区(CLIENT AREA)
       // 偏移量包含透明调整边框、标题栏、窗口chrome等，无需硬编码
       final currentWindowSize = await windowManager.getSize();
-      final currentViewSize = WidgetsBinding.instance.platformDispatcher.views.first.physicalSize;
-      final offsetW = currentWindowSize.width - currentViewSize.width / devicePixelRatio;
-      final offsetH = currentWindowSize.height - currentViewSize.height / devicePixelRatio;
+      final currentViewSize =
+          WidgetsBinding.instance.platformDispatcher.views.first.physicalSize;
+      final offsetW =
+          currentWindowSize.width - currentViewSize.width / devicePixelRatio;
+      final offsetH =
+          currentWindowSize.height - currentViewSize.height / devicePixelRatio;
 
       // 测量内容区中非视频UI元素（如AppBar/TabBar）的高度
       // 需要遍历所有祖先Scaffold，因为_context在VideoPlayerWidget内，
@@ -1350,7 +1426,8 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
 
       // 目标窗口尺寸 = 视频逻辑尺寸 + 窗口边框偏移 + 内容区UI高度
       double logicalWidth = videoWidth / devicePixelRatio + offsetW;
-      double logicalHeight = videoHeight / devicePixelRatio + offsetH + inContentUIHeight;
+      double logicalHeight =
+          videoHeight / devicePixelRatio + offsetH + inContentUIHeight;
 
       // 最小尺寸保护
       logicalWidth = logicalWidth.clamp(320.0, 7680.0);
