@@ -37,7 +37,7 @@ class WindowsNativeVideoPlugin {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
   HWND EnsureOverlayWindow();
-  void HideOverlayWindow();
+  void HideOverlayWindow(bool reset_generation = true);
   void UpdateOverlayFrame(const flutter::EncodableMap& args);
   flutter::EncodableMap BuildHandles() const;
   flutter::EncodableMap BuildDiagnostics() const;

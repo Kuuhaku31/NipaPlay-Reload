@@ -124,11 +124,11 @@ bool IsOverlayAboveFlutterEnabled() {
   return length > 0 && value[0] == L'1';
 }
 
-HWND ResolveOverlayInsertAfter(HWND flutter_view) {
+HWND ResolveOverlayInsertAfter(HWND host_window) {
   if (IsOverlayAboveFlutterEnabled()) {
     return HWND_TOP;
   }
-  return flutter_view != nullptr ? flutter_view : HWND_BOTTOM;
+  return host_window != nullptr ? host_window : HWND_BOTTOM;
 }
 
 int64_t HwndToInt64(HWND hwnd) {
@@ -161,12 +161,16 @@ flutter::EncodableMap BuildWindowDiagnostics(HWND hwnd) {
       flutter::EncodableValue(static_cast<int64_t>(process_id));
   result[flutter::EncodableValue("parent")] =
       flutter::EncodableValue(HwndToInt64(::GetParent(hwnd)));
+  result[flutter::EncodableValue("owner")] =
+      flutter::EncodableValue(HwndToInt64(::GetWindow(hwnd, GW_OWNER)));
   result[flutter::EncodableValue("zPrev")] =
       flutter::EncodableValue(HwndToInt64(::GetWindow(hwnd, GW_HWNDPREV)));
   result[flutter::EncodableValue("zNext")] =
       flutter::EncodableValue(HwndToInt64(::GetWindow(hwnd, GW_HWNDNEXT)));
   result[flutter::EncodableValue("styleChild")] =
       flutter::EncodableValue((style & WS_CHILD) != 0);
+  result[flutter::EncodableValue("stylePopup")] =
+      flutter::EncodableValue((style & WS_POPUP) != 0);
   result[flutter::EncodableValue("exLayered")] =
       flutter::EncodableValue((ex_style & WS_EX_LAYERED) != 0);
   result[flutter::EncodableValue("exTransparent")] =
@@ -212,6 +216,15 @@ flutter::EncodableMap BuildHitTestDiagnostics(HWND host_window,
             CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT)));
   }
   return result;
+}
+
+bool HostClientOriginOnScreen(HWND host_window, POINT* origin) {
+  if (host_window == nullptr || origin == nullptr) {
+    return false;
+  }
+  origin->x = 0;
+  origin->y = 0;
+  return ::ClientToScreen(host_window, origin) != FALSE;
 }
 
 void LogNativeVideo(const std::string& message) {
@@ -834,15 +847,16 @@ HWND WindowsNativeVideoPlugin::EnsureOverlayWindow() {
 
   RegisterOverlayWindowClass();
   overlay_window_ = ::CreateWindowExW(
-      WS_EX_NOACTIVATE | WS_EX_TRANSPARENT, kOverlayWindowClassName,
-      L"NipaPlay Native Video", WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-      0, 0, 1, 1, host_window_, nullptr, ::GetModuleHandle(nullptr), nullptr);
+      WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW,
+      kOverlayWindowClassName, L"NipaPlay Native Video",
+      WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, 0, 1, 1, nullptr,
+      nullptr, ::GetModuleHandle(nullptr), nullptr);
 
   if (overlay_window_ != nullptr) {
     const LONG_PTR ex_style =
         ::GetWindowLongPtrW(overlay_window_, GWL_EXSTYLE);
     const LONG_PTR no_activate_style =
-        ex_style | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
+        ex_style | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW;
     if (no_activate_style != ex_style) {
       ::SetWindowLongPtrW(overlay_window_, GWL_EXSTYLE, no_activate_style);
       ::SetWindowPos(overlay_window_, nullptr, 0, 0, 0, 0,
@@ -858,7 +872,7 @@ HWND WindowsNativeVideoPlugin::EnsureOverlayWindow() {
                    " exStyle=" +
                    std::to_string(static_cast<int64_t>(
                        ::GetWindowLongPtrW(overlay_window_, GWL_EXSTYLE))) +
-                   " noActivate=1 hitTestTransparent=1");
+                   " noActivate=1 hitTestTransparent=1 topLevelPopup=1");
   } else {
     LogNativeVideo("EnsureOverlayWindow failed host=" +
                    std::to_string(HwndToInt64(host_window_)) +
@@ -867,15 +881,18 @@ HWND WindowsNativeVideoPlugin::EnsureOverlayWindow() {
   return overlay_window_;
 }
 
-void WindowsNativeVideoPlugin::HideOverlayWindow() {
+void WindowsNativeVideoPlugin::HideOverlayWindow(bool reset_generation) {
   if (overlay_window_ == nullptr) {
     return;
   }
   LogNativeVideo("HideOverlayWindow overlay=" +
                  std::to_string(HwndToInt64(overlay_window_)) +
                  " generation=" +
-                 OptionalInt64ToString(overlay_frame_generation_));
-  overlay_frame_generation_.reset();
+                 OptionalInt64ToString(overlay_frame_generation_) +
+                 " resetGeneration=" + std::to_string(reset_generation ? 1 : 0));
+  if (reset_generation) {
+    overlay_frame_generation_.reset();
+  }
   overlay_visible_ = false;
   if (overlay_window_ != nullptr) {
     ::SetWindowPos(overlay_window_, nullptr, 0, 0, 0, 0,
@@ -910,6 +927,11 @@ void WindowsNativeVideoPlugin::UpdateOverlayFrame(
     return;
   }
 
+  if (::IsIconic(host_window_) || !::IsWindowVisible(host_window_)) {
+    HideOverlayWindow(false);
+    return;
+  }
+
   const bool was_visible = overlay_visible_;
   const bool generation_changed =
       generation.has_value() &&
@@ -919,35 +941,37 @@ void WindowsNativeVideoPlugin::UpdateOverlayFrame(
     overlay_frame_generation_ = generation.value();
   }
 
-  const int x = LogicalToPhysical(host_window_, ReadDouble(args, "x"));
-  const int y = LogicalToPhysical(host_window_, ReadDouble(args, "y"));
+  POINT client_origin = {};
+  if (!HostClientOriginOnScreen(host_window_, &client_origin)) {
+    LogNativeVideo("setOverlayFrame failed: ClientToScreen error=" +
+                   std::to_string(::GetLastError()));
+    return;
+  }
+
+  const int x = client_origin.x + LogicalToPhysical(host_window_, ReadDouble(args, "x"));
+  const int y = client_origin.y + LogicalToPhysical(host_window_, ReadDouble(args, "y"));
   const int w = std::max(1, LogicalToPhysical(host_window_, width));
   const int h = std::max(1, LogicalToPhysical(host_window_, height));
-  const HWND insert_after = ResolveOverlayInsertAfter(flutter_view_);
+  const HWND insert_after = ResolveOverlayInsertAfter(host_window_);
 
   const BOOL moved = ::SetWindowPos(overlay, insert_after, x, y, w, h,
                                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
-  const BOOL flutter_top =
-      flutter_view_ == nullptr
-          ? TRUE
-          : ::SetWindowPos(flutter_view_, HWND_TOP, 0, 0, 0, 0,
-                           SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
-  if (!was_visible || generation_changed || !moved || !flutter_top) {
+  if (!was_visible || generation_changed || !moved) {
     LogNativeVideo("setOverlayFrame visible=1 generation=" +
                    OptionalInt64ToString(generation) + " logical=(" +
                    std::to_string(ReadDouble(args, "x")) + "," +
                    std::to_string(ReadDouble(args, "y")) + "," +
                    std::to_string(width) + "x" + std::to_string(height) +
-                   ") physical=(" + std::to_string(x) + "," +
+                   ") clientOrigin=(" + std::to_string(client_origin.x) + "," +
+                   std::to_string(client_origin.y) + ") screenPhysical=(" + std::to_string(x) + "," +
                    std::to_string(y) + "," + std::to_string(w) + "x" +
                    std::to_string(h) + ") overlay=" +
                    std::to_string(HwndToInt64(overlay)) + " flutterView=" +
                    std::to_string(HwndToInt64(flutter_view_)) + " ok=" +
                    std::to_string(moved ? 1 : 0) + " error=" +
                    std::to_string(moved ? 0 : ::GetLastError()) +
-                   " flutterTopOk=" + std::to_string(flutter_top ? 1 : 0) +
                    " zOrder=" +
-                   (IsOverlayAboveFlutterEnabled() ? "above" : "below"));
+                   (IsOverlayAboveFlutterEnabled() ? "above" : "below-host"));
   }
   overlay_visible_ = true;
   if (video_renderer_ != nullptr) {
