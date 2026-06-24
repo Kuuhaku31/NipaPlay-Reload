@@ -452,7 +452,7 @@ class _MacOSWindowNativeVideoOverlaySurfaceState
   }
 
   void _handleWindowsPointerEvent(PointerEvent event) {
-    if (_windowsPointerLogCount < 64) {
+    if (!kReleaseMode && _windowsPointerLogCount < 16) {
       _windowsPointerLogCount += 1;
       debugPrint(
         '[NativeVideoSurface][Overlay] FLUTTER_TRANSPARENT_VIDEO_REGION_POINTER '

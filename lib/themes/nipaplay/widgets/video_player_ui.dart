@@ -591,7 +591,9 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
     final showControlsBefore = videoState.showControls;
     final mouseVisibleBefore = _isMouseVisible;
     final processed = _handlePointerActivity();
-    if (processed && _windowsNativeOverlayPointerLogCount < 80) {
+    if (!kReleaseMode &&
+        processed &&
+        _windowsNativeOverlayPointerLogCount < 16) {
       _windowsNativeOverlayPointerLogCount += 1;
       debugPrint(
         '[VideoPlayerUI] WINDOWS_NATIVE_OVERLAY_POINTER_ACTIVITY '

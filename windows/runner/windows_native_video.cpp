@@ -11,14 +11,17 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cmath>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <variant>
 
 #include <windowsx.h>
@@ -375,18 +378,84 @@ class WindowsOpenGLVideoRenderer {
       return false;
     }
 
+    std::promise<bool> init_promise;
+    auto init_future = init_promise.get_future();
+    render_thread_ = std::thread(&WindowsOpenGLVideoRenderer::RenderThreadMain,
+                                 this, std::move(init_promise));
+    const bool initialized = init_future.get();
+    if (!initialized) {
+      Destroy();
+      return false;
+    }
+
+    ::SetWindowLongPtrW(hwnd_, GWLP_USERDATA,
+                        reinterpret_cast<LONG_PTR>(this));
+    LogNativeVideo("renderer init ok hwnd=" +
+                   std::to_string(HwndToInt64(hwnd_)) + " player=" +
+                   std::to_string(player_handle_));
+    RequestRender();
+    return true;
+  }
+
+  void RequestRender() {
+    if (destroyed_.load() || hwnd_ == nullptr) {
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(render_signal_mutex_);
+      render_requested_ = true;
+    }
+    render_cv_.notify_one();
+  }
+
+  void HostWindowDidChange() {
+    if (destroyed_.load() || hwnd_ == nullptr) {
+      return;
+    }
+    ::InvalidateRect(hwnd_, nullptr, FALSE);
+    RequestRender();
+  }
+
+  void Render() {
+    RequestRender();
+  }
+
+ private:
+  void RenderThreadMain(std::promise<bool> init_promise) {
+    const bool initialized = InitializeOnRenderThread();
+    init_promise.set_value(initialized);
+    if (!initialized) {
+      DestroyOpenGLOnRenderThread();
+      return;
+    }
+
+    for (;;) {
+      std::unique_lock<std::mutex> lock(render_signal_mutex_);
+      render_cv_.wait(lock, [this] {
+        return render_requested_ || stop_render_thread_;
+      });
+      if (stop_render_thread_) {
+        break;
+      }
+      render_requested_ = false;
+      lock.unlock();
+      RenderFrameOnRenderThread();
+    }
+
+    DestroyOpenGLOnRenderThread();
+  }
+
+  bool InitializeOnRenderThread() {
     gl_context_ = ::wglCreateContext(dc_);
     if (gl_context_ == nullptr) {
       LogNativeVideo("renderer init failed: wglCreateContext error=" +
                      std::to_string(::GetLastError()));
-      Destroy();
       return false;
     }
 
     if (!::wglMakeCurrent(dc_, gl_context_)) {
       LogNativeVideo("renderer init failed: wglMakeCurrent error=" +
                      std::to_string(::GetLastError()));
-      Destroy();
       return false;
     }
 
@@ -407,7 +476,6 @@ class WindowsOpenGLVideoRenderer {
     if (result < 0 || render_context_ == nullptr) {
       LogNativeVideo("renderer init failed: mpv_render_context_create " +
                      std::string(::mpv_error_string(result)));
-      Destroy();
       return false;
     }
 
@@ -421,38 +489,14 @@ class WindowsOpenGLVideoRenderer {
           }
         },
         this);
-
-    ::SetWindowLongPtrW(hwnd_, GWLP_USERDATA,
-                        reinterpret_cast<LONG_PTR>(this));
-    LogNativeVideo("renderer init ok hwnd=" +
-                   std::to_string(HwndToInt64(hwnd_)) + " player=" +
-                   std::to_string(player_handle_));
-    RequestRender();
     return true;
   }
 
-  void RequestRender() {
-    if (destroyed_.load() || hwnd_ == nullptr) {
-      return;
-    }
-    ::PostMessageW(hwnd_, kRenderMessage, 0, 0);
-  }
-
-  void HostWindowDidChange() {
-    if (destroyed_.load() || hwnd_ == nullptr) {
-      return;
-    }
-    ::InvalidateRect(hwnd_, nullptr, FALSE);
-    RequestRender();
-  }
-
-  void Render() {
-    std::lock_guard<std::mutex> lock(render_mutex_);
+  void RenderFrameOnRenderThread() {
     if (destroyed_.load() || render_context_ == nullptr ||
         gl_context_ == nullptr || dc_ == nullptr) {
       return;
     }
-
     RECT client_rect = {};
     if (!::GetClientRect(hwnd_, &client_rect)) {
       return;
@@ -544,25 +588,34 @@ class WindowsOpenGLVideoRenderer {
     }
   }
 
+  void DestroyOpenGLOnRenderThread() {
+    if (render_context_ != nullptr) {
+      ::wglMakeCurrent(dc_, gl_context_);
+      ::mpv_render_context_set_update_callback(render_context_, nullptr,
+                                               nullptr);
+      ::mpv_render_context_free(render_context_);
+      render_context_ = nullptr;
+    }
+    if (gl_context_ != nullptr) {
+      ::wglMakeCurrent(nullptr, nullptr);
+      ::wglDeleteContext(gl_context_);
+      gl_context_ = nullptr;
+    }
+  }
+
   void Destroy() {
     if (destroyed_.exchange(true)) {
       return;
     }
 
     {
-      std::lock_guard<std::mutex> lock(render_mutex_);
-      if (render_context_ != nullptr) {
-        ::wglMakeCurrent(dc_, gl_context_);
-        ::mpv_render_context_set_update_callback(render_context_, nullptr,
-                                                nullptr);
-        ::mpv_render_context_free(render_context_);
-        render_context_ = nullptr;
-      }
-      if (gl_context_ != nullptr) {
-        ::wglMakeCurrent(nullptr, nullptr);
-        ::wglDeleteContext(gl_context_);
-        gl_context_ = nullptr;
-      }
+      std::lock_guard<std::mutex> lock(render_signal_mutex_);
+      stop_render_thread_ = true;
+      render_requested_ = true;
+    }
+    render_cv_.notify_one();
+    if (render_thread_.joinable()) {
+      render_thread_.join();
     }
 
     if (hwnd_ != nullptr &&
@@ -587,7 +640,11 @@ class WindowsOpenGLVideoRenderer {
   mpv_handle* mpv_ = nullptr;
   mpv_render_context* render_context_ = nullptr;
   std::atomic_bool destroyed_{false};
-  std::mutex render_mutex_;
+  std::thread render_thread_;
+  std::mutex render_signal_mutex_;
+  std::condition_variable render_cv_;
+  bool render_requested_ = false;
+  bool stop_render_thread_ = false;
   uint64_t rendered_frames_ = 0;
   uint64_t render_failures_ = 0;
 };
@@ -596,10 +653,24 @@ namespace {
 
 std::atomic<uint32_t> g_overlay_input_log_count{0};
 
+bool IsOverlayInputProbeEnabled() {
+  static const bool enabled = [] {
+    wchar_t value[8] = {};
+    const DWORD length = ::GetEnvironmentVariableW(
+        L"NIPAPLAY_WINDOWS_NATIVE_VIDEO_INPUT_PROBE", value,
+        static_cast<DWORD>(std::size(value)));
+    return length > 0 && value[0] == L'1';
+  }();
+  return enabled;
+}
+
 void LogOverlayInputMessage(HWND hwnd,
                             const char* name,
                             WPARAM wparam,
                             LPARAM lparam) {
+  if (!IsOverlayInputProbeEnabled()) {
+    return;
+  }
   const uint32_t count = g_overlay_input_log_count.fetch_add(1);
   if (count >= 64) {
     return;

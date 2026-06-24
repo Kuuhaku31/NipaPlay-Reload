@@ -484,8 +484,21 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
       }
 
       _saveCurrentPositionToHistory();
-      // 在暂停时触发截图（Windows+MediaKit 延迟，避免与 mpv 暂停竞争）
-      if (isWindowsMediaKit) {
+      final bool deferInteractiveThumbnailCapture =
+          _usesWindowsPlatformVideoSurface;
+      if (deferInteractiveThumbnailCapture) {
+        // 在暂停时触发截图（Windows+MediaKit 延迟，避免与 mpv 暂停竞争）
+        if (_currentThumbnailPath == null || _currentThumbnailPath!.isEmpty) {
+          Future.delayed(const Duration(seconds: 3), () {
+            if (_status == PlayerStatus.paused &&
+                !_isCapturingFrame &&
+                (_currentThumbnailPath == null ||
+                    _currentThumbnailPath!.isEmpty)) {
+              _captureConditionalScreenshot("暂停时");
+            }
+          });
+        }
+      } else if (isWindowsMediaKit) {
         Future.delayed(const Duration(milliseconds: 400), () {
           if (_status == PlayerStatus.paused) {
             _captureConditionalScreenshot("暂停时");
@@ -556,10 +569,12 @@ extension VideoPlayerStatePlaybackControls on VideoPlayerState {
       // 在首次播放时进行截图
       if (!_hasInitialScreenshot) {
         _hasInitialScreenshot = true;
-        // 延迟一秒再截图，确保视频已经开始显示
-        Future.delayed(const Duration(seconds: 1), () {
-          _captureConditionalScreenshot("首次播放时");
-        });
+        if (!_usesWindowsPlatformVideoSurface) {
+          // 延迟一秒再截图，确保视频已经开始显示
+          Future.delayed(const Duration(seconds: 1), () {
+            _captureConditionalScreenshot("首次播放时");
+          });
+        }
       }
       // 视频开始播放后更新解码器信息
       Future.delayed(const Duration(seconds: 1), () {
