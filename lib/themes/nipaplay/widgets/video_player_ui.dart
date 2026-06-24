@@ -287,16 +287,23 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
   }
 
   Widget _buildVideoSurfaceStage(VideoPlayerState videoState, int? textureId) {
-    if (_shouldUseWindowHostedVideoOverlay(videoState)) {
-      return _buildVideoSurface(videoState, textureId);
-    }
-
+    // Size the surface to the real video aspect ratio and center it, matching
+    // the media-kit path. The window-hosted native plane mirrors this widget's
+    // rect, so this is what gives 21:9 content correct letterboxing instead of
+    // stretching/filling the whole screen.
     final surface = Center(
       child: AspectRatio(
         aspectRatio: videoState.aspectRatio,
         child: _buildVideoSurface(videoState, textureId),
       ),
     );
+    if (_shouldUseWindowHostedVideoOverlay(videoState)) {
+      // The native surface sits below Flutter, so the area around the video
+      // must stay transparent; the black window background shows through as
+      // the letterbox bars. Painting a black ColoredBox here would cover the
+      // native video plane.
+      return surface;
+    }
     return ColoredBox(color: Colors.black, child: surface);
   }
 
