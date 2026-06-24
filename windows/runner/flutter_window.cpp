@@ -65,6 +65,20 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  switch (message) {
+    case WM_MOVE:
+    case WM_MOVING:
+    case WM_SIZE:
+    case WM_SIZING:
+    case WM_EXITSIZEMOVE:
+    case WM_SHOWWINDOW:
+    case WM_DPICHANGED:
+      if (windows_native_video_plugin_) {
+        windows_native_video_plugin_->HostWindowDidChange();
+      }
+      break;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

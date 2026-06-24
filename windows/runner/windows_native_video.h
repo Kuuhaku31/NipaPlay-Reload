@@ -29,6 +29,7 @@ class WindowsNativeVideoPlugin {
   WindowsNativeVideoPlugin& operator=(const WindowsNativeVideoPlugin&) = delete;
 
   void SetFlutterView(HWND flutter_view);
+  void HostWindowDidChange();
   void Destroy();
 
  private:
@@ -39,6 +40,7 @@ class WindowsNativeVideoPlugin {
   HWND EnsureOverlayWindow();
   void HideOverlayWindow(bool reset_generation = true);
   void UpdateOverlayFrame(const flutter::EncodableMap& args);
+  void SyncOverlayWindowToHost(bool force_log = false);
   flutter::EncodableMap BuildHandles() const;
   flutter::EncodableMap BuildDiagnostics() const;
   std::string BuildDiagnosticsSummary() const;
@@ -47,6 +49,16 @@ class WindowsNativeVideoPlugin {
   HWND flutter_view_ = nullptr;
   HWND overlay_window_ = nullptr;
   std::optional<int64_t> overlay_frame_generation_;
+  bool overlay_frame_rect_valid_ = false;
+  double overlay_frame_logical_x_ = 0.0;
+  double overlay_frame_logical_y_ = 0.0;
+  double overlay_frame_logical_width_ = 0.0;
+  double overlay_frame_logical_height_ = 0.0;
+  bool overlay_physical_rect_valid_ = false;
+  int overlay_physical_x_ = 0;
+  int overlay_physical_y_ = 0;
+  int overlay_physical_width_ = 0;
+  int overlay_physical_height_ = 0;
   int64_t attached_player_handle_ = 0;
   bool overlay_visible_ = false;
   bool host_transparent_background_enabled_ = false;

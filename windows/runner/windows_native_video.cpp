@@ -721,6 +721,10 @@ void WindowsNativeVideoPlugin::SetFlutterView(HWND flutter_view) {
                  std::to_string(HwndToInt64(flutter_view_)));
 }
 
+void WindowsNativeVideoPlugin::HostWindowDidChange() {
+  SyncOverlayWindowToHost(false);
+}
+
 void WindowsNativeVideoPlugin::Destroy() {
   LogNativeVideo("Destroy overlay=" + std::to_string(HwndToInt64(overlay_window_)) +
                  " attachedPlayer=" + std::to_string(attached_player_handle_) +
@@ -731,6 +735,8 @@ void WindowsNativeVideoPlugin::Destroy() {
     overlay_window_ = nullptr;
   }
   overlay_frame_generation_.reset();
+  overlay_frame_rect_valid_ = false;
+  overlay_physical_rect_valid_ = false;
   overlay_visible_ = false;
   attached_player_handle_ = 0;
 }
@@ -892,6 +898,8 @@ void WindowsNativeVideoPlugin::HideOverlayWindow(bool reset_generation) {
                  " resetGeneration=" + std::to_string(reset_generation ? 1 : 0));
   if (reset_generation) {
     overlay_frame_generation_.reset();
+    overlay_frame_rect_valid_ = false;
+    overlay_physical_rect_valid_ = false;
   }
   overlay_visible_ = false;
   if (overlay_window_ != nullptr) {
@@ -941,40 +949,87 @@ void WindowsNativeVideoPlugin::UpdateOverlayFrame(
     overlay_frame_generation_ = generation.value();
   }
 
+  overlay_frame_rect_valid_ = true;
+  overlay_frame_logical_x_ = ReadDouble(args, "x");
+  overlay_frame_logical_y_ = ReadDouble(args, "y");
+  overlay_frame_logical_width_ = width;
+  overlay_frame_logical_height_ = height;
+
+  SyncOverlayWindowToHost(!was_visible || generation_changed);
+}
+
+void WindowsNativeVideoPlugin::SyncOverlayWindowToHost(bool force_log) {
+  if (overlay_window_ == nullptr || !overlay_frame_rect_valid_) {
+    return;
+  }
+
+  if (::IsIconic(host_window_) || !::IsWindowVisible(host_window_)) {
+    HideOverlayWindow(false);
+    return;
+  }
+
   POINT client_origin = {};
   if (!HostClientOriginOnScreen(host_window_, &client_origin)) {
-    LogNativeVideo("setOverlayFrame failed: ClientToScreen error=" +
+    LogNativeVideo("syncOverlayFrame failed: ClientToScreen error=" +
                    std::to_string(::GetLastError()));
     return;
   }
 
-  const int x = client_origin.x + LogicalToPhysical(host_window_, ReadDouble(args, "x"));
-  const int y = client_origin.y + LogicalToPhysical(host_window_, ReadDouble(args, "y"));
-  const int w = std::max(1, LogicalToPhysical(host_window_, width));
-  const int h = std::max(1, LogicalToPhysical(host_window_, height));
-  const HWND insert_after = ResolveOverlayInsertAfter(host_window_);
+  const int x =
+      client_origin.x + LogicalToPhysical(host_window_, overlay_frame_logical_x_);
+  const int y =
+      client_origin.y + LogicalToPhysical(host_window_, overlay_frame_logical_y_);
+  const int w =
+      std::max(1, LogicalToPhysical(host_window_, overlay_frame_logical_width_));
+  const int h =
+      std::max(1, LogicalToPhysical(host_window_, overlay_frame_logical_height_));
+  const bool rect_changed = !overlay_physical_rect_valid_ ||
+      overlay_physical_x_ != x || overlay_physical_y_ != y ||
+      overlay_physical_width_ != w || overlay_physical_height_ != h;
+  const bool size_changed = !overlay_physical_rect_valid_ ||
+      overlay_physical_width_ != w || overlay_physical_height_ != h;
+  const bool should_update_z_order = force_log || !overlay_visible_;
+  if (!rect_changed && overlay_visible_ && !should_update_z_order) {
+    return;
+  }
 
-  const BOOL moved = ::SetWindowPos(overlay, insert_after, x, y, w, h,
-                                    SWP_NOACTIVATE | SWP_SHOWWINDOW);
-  if (!was_visible || generation_changed || !moved) {
+  const HWND insert_after = should_update_z_order
+                                ? ResolveOverlayInsertAfter(host_window_)
+                                : nullptr;
+  UINT flags = SWP_NOACTIVATE | SWP_SHOWWINDOW;
+  if (!should_update_z_order) {
+    flags |= SWP_NOZORDER;
+  }
+  const BOOL moved =
+      ::SetWindowPos(overlay_window_, insert_after, x, y, w, h, flags);
+  if (force_log || !overlay_visible_ || !moved) {
     LogNativeVideo("setOverlayFrame visible=1 generation=" +
-                   OptionalInt64ToString(generation) + " logical=(" +
-                   std::to_string(ReadDouble(args, "x")) + "," +
-                   std::to_string(ReadDouble(args, "y")) + "," +
-                   std::to_string(width) + "x" + std::to_string(height) +
+                   OptionalInt64ToString(overlay_frame_generation_) +
+                   " logical=(" + std::to_string(overlay_frame_logical_x_) +
+                   "," + std::to_string(overlay_frame_logical_y_) + "," +
+                   std::to_string(overlay_frame_logical_width_) + "x" +
+                   std::to_string(overlay_frame_logical_height_) +
                    ") clientOrigin=(" + std::to_string(client_origin.x) + "," +
-                   std::to_string(client_origin.y) + ") screenPhysical=(" + std::to_string(x) + "," +
-                   std::to_string(y) + "," + std::to_string(w) + "x" +
-                   std::to_string(h) + ") overlay=" +
-                   std::to_string(HwndToInt64(overlay)) + " flutterView=" +
+                   std::to_string(client_origin.y) + ") screenPhysical=(" +
+                   std::to_string(x) + "," + std::to_string(y) + "," +
+                   std::to_string(w) + "x" + std::to_string(h) +
+                   ") overlay=" + std::to_string(HwndToInt64(overlay_window_)) +
+                   " flutterView=" +
                    std::to_string(HwndToInt64(flutter_view_)) + " ok=" +
                    std::to_string(moved ? 1 : 0) + " error=" +
                    std::to_string(moved ? 0 : ::GetLastError()) +
                    " zOrder=" +
                    (IsOverlayAboveFlutterEnabled() ? "above" : "below-host"));
   }
+  if (moved) {
+    overlay_physical_rect_valid_ = true;
+    overlay_physical_x_ = x;
+    overlay_physical_y_ = y;
+    overlay_physical_width_ = w;
+    overlay_physical_height_ = h;
+  }
   overlay_visible_ = true;
-  if (video_renderer_ != nullptr) {
+  if (size_changed && video_renderer_ != nullptr) {
     video_renderer_->HostWindowDidChange();
   }
 }
