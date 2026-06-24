@@ -562,6 +562,19 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
     }
   }
 
+  bool _isWindowsNativeVideoFallbackError(PlatformException error) {
+    if (!Platform.isWindows) {
+      return false;
+    }
+    switch (error.code) {
+      case 'NATIVE_SURFACE_UNAVAILABLE':
+      case 'WINDOW_CREATE_FAILED':
+      case 'RENDERER_CREATE_FAILED':
+        return true;
+    }
+    return false;
+  }
+
   Future<Map<String, dynamic>?> _requestWindowsNativeVideoHandlesWithRetry({
     required int viewId,
     required int requestGeneration,
@@ -607,6 +620,14 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         return handles;
       } on PlatformException catch (e) {
         if (e.code != 'NATIVE_SURFACE_UNAVAILABLE') {
+          if (_isWindowsNativeVideoFallbackError(e)) {
+            if (requestGeneration == _platformVideoSurfaceBindingGeneration &&
+                _usesPlatformVideoSurface &&
+                !_isDisposed) {
+              await _activateTextureVideoFallback(e.message ?? e.code);
+            }
+            return null;
+          }
           rethrow;
         }
         lastSurfaceError = e;
@@ -2878,7 +2899,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         () => unawaited(_dumpMacOSHdrDiagnostics('surface-attached+1500ms')),
       );
     } on PlatformException catch (e) {
-      if (Platform.isWindows && e.code == 'NATIVE_SURFACE_UNAVAILABLE') {
+      if (_isWindowsNativeVideoFallbackError(e)) {
         if (bindingGeneration == _platformVideoSurfaceBindingGeneration) {
           await _activateTextureVideoFallback(e.message ?? e.code);
         }
@@ -2890,7 +2911,7 @@ class MediaKitPlayerAdapter implements AbstractPlayer, TickerProvider {
         _attachedPlatformWindowHandle = null;
         _platformVideoSurfaceBindingGeneration += 1;
       }
-      debugPrint('MediaKit: 缁戝畾骞冲彴鍘熺敓瑙嗛闈㈠け璐? $e');
+      debugPrint('MediaKit: 绑定平台原生视频面失败: $e');
       rethrow;
     } catch (e) {
       if (bindingGeneration == _platformVideoSurfaceBindingGeneration) {

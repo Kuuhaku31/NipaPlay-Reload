@@ -30,6 +30,9 @@ class WindowsNativeVideoPlugin {
 
   void SetFlutterView(HWND flutter_view);
   void HostWindowDidChange();
+  void HostWindowDidActivate();
+  void HostWindowDidDeactivate();
+  void HostWindowZOrderDidChange();
   void Destroy();
 
  private:
@@ -61,6 +64,7 @@ class WindowsNativeVideoPlugin {
   int overlay_physical_height_ = 0;
   int64_t attached_player_handle_ = 0;
   bool overlay_visible_ = false;
+  bool host_window_active_ = true;
   bool host_transparent_background_enabled_ = false;
   std::unique_ptr<WindowsOpenGLVideoRenderer> video_renderer_;
 

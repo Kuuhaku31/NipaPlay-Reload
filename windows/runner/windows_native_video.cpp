@@ -230,6 +230,27 @@ bool HostClientOriginOnScreen(HWND host_window, POINT* origin) {
   return ::ClientToScreen(host_window, origin) != FALSE;
 }
 
+bool HostWindowCanShowOverlay(HWND host_window, bool host_window_active) {
+  if (!host_window_active || host_window == nullptr ||
+      ::IsIconic(host_window) || !::IsWindowVisible(host_window)) {
+    return false;
+  }
+
+  const HWND foreground_window = ::GetForegroundWindow();
+  if (foreground_window == nullptr) {
+    return true;
+  }
+
+  DWORD host_process_id = 0;
+  DWORD foreground_process_id = 0;
+  ::GetWindowThreadProcessId(host_window, &host_process_id);
+  ::GetWindowThreadProcessId(foreground_window, &foreground_process_id);
+  if (host_process_id == 0 || foreground_process_id == 0) {
+    return true;
+  }
+  return host_process_id == foreground_process_id;
+}
+
 void LogNativeVideo(const std::string& message) {
   std::cout << "NipaPlay WindowsNativeVideo: " << message << std::endl;
 }
@@ -796,6 +817,20 @@ void WindowsNativeVideoPlugin::HostWindowDidChange() {
   SyncOverlayWindowToHost(false);
 }
 
+void WindowsNativeVideoPlugin::HostWindowDidActivate() {
+  host_window_active_ = true;
+  SyncOverlayWindowToHost(true);
+}
+
+void WindowsNativeVideoPlugin::HostWindowDidDeactivate() {
+  host_window_active_ = false;
+  HideOverlayWindow(false);
+}
+
+void WindowsNativeVideoPlugin::HostWindowZOrderDidChange() {
+  SyncOverlayWindowToHost(true);
+}
+
 void WindowsNativeVideoPlugin::Destroy() {
   LogNativeVideo("Destroy overlay=" + std::to_string(HwndToInt64(overlay_window_)) +
                  " attachedPlayer=" + std::to_string(attached_player_handle_) +
@@ -1006,7 +1041,7 @@ void WindowsNativeVideoPlugin::UpdateOverlayFrame(
     return;
   }
 
-  if (::IsIconic(host_window_) || !::IsWindowVisible(host_window_)) {
+  if (!HostWindowCanShowOverlay(host_window_, host_window_active_)) {
     HideOverlayWindow(false);
     return;
   }
@@ -1034,7 +1069,7 @@ void WindowsNativeVideoPlugin::SyncOverlayWindowToHost(bool force_log) {
     return;
   }
 
-  if (::IsIconic(host_window_) || !::IsWindowVisible(host_window_)) {
+  if (!HostWindowCanShowOverlay(host_window_, host_window_active_)) {
     HideOverlayWindow(false);
     return;
   }

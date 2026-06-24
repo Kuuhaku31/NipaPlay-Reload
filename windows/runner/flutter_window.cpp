@@ -66,6 +66,23 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   switch (message) {
+    case WM_ACTIVATEAPP:
+      if (windows_native_video_plugin_) {
+        if (wparam != FALSE) {
+          windows_native_video_plugin_->HostWindowDidActivate();
+        } else {
+          windows_native_video_plugin_->HostWindowDidDeactivate();
+        }
+      }
+      break;
+    case WM_WINDOWPOSCHANGED: {
+      const auto* window_pos = reinterpret_cast<WINDOWPOS*>(lparam);
+      if (windows_native_video_plugin_ &&
+          (window_pos == nullptr || (window_pos->flags & SWP_NOZORDER) == 0)) {
+        windows_native_video_plugin_->HostWindowZOrderDidChange();
+      }
+      break;
+    }
     case WM_MOVE:
     case WM_MOVING:
     case WM_SIZE:
