@@ -53,11 +53,20 @@ class _PlayVideoPageState extends State<PlayVideoPage> {
   }
 
   bool get _isMacOSHdrTransparentFlutterEnabled {
-    return !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.macOS &&
-        Platform.environment['NIPAPLAY_MACOS_HDR_TRANSPARENT_FLUTTER'] != '0' &&
-        Platform.environment['NIPAPLAY_MACOS_HDR_USE_APPKIT_VIEW'] != '1' &&
-        Platform.environment['NIPAPLAY_DISABLE_MACOS_WINDOW_OVERLAY'] != '1';
+    if (kIsWeb) {
+      return false;
+    }
+    if (defaultTargetPlatform == TargetPlatform.macOS) {
+      return Platform.environment['NIPAPLAY_MACOS_HDR_TRANSPARENT_FLUTTER'] !=
+              '0' &&
+          Platform.environment['NIPAPLAY_MACOS_HDR_USE_APPKIT_VIEW'] != '1' &&
+          Platform.environment['NIPAPLAY_DISABLE_MACOS_WINDOW_OVERLAY'] != '1';
+    }
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return Platform.environment['NIPAPLAY_DISABLE_WINDOWS_WINDOW_OVERLAY'] !=
+          '1';
+    }
+    return false;
   }
 
   @override

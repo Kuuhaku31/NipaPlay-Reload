@@ -522,12 +522,20 @@ void main(List<String> args) async {
       final startupPosition =
           await DesktopStartupWindowPreferences.loadPosition();
       final startupSize = await DesktopStartupWindowPreferences.loadSize();
-      WindowOptions windowOptions = const WindowOptions(
+      final transparentWindowBackground = Platform
+              .environment['NIPAPLAY_DISABLE_WINDOWS_TRANSPARENT_BACKGROUND'] !=
+          '1';
+      WindowOptions windowOptions = WindowOptions(
         skipTaskbar: false,
         titleBarStyle: TitleBarStyle.hidden,
+        backgroundColor:
+            transparentWindowBackground ? Colors.transparent : null,
         title: "NipaPlay",
       );
       windowManager.waitUntilReadyToShow(windowOptions, () async {
+        if (transparentWindowBackground) {
+          await windowManager.setBackgroundColor(Colors.transparent);
+        }
         await windowManager.setMinimumSize(const Size(600, 400));
         if (startupState == DesktopStartupWindowState.maximized) {
           await windowManager.maximize();

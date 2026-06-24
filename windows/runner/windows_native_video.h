@@ -49,7 +49,7 @@ class WindowsNativeVideoPlugin {
   std::optional<int64_t> overlay_frame_generation_;
   int64_t attached_player_handle_ = 0;
   bool overlay_visible_ = false;
-  bool flutter_view_color_key_enabled_ = false;
+  bool host_transparent_background_enabled_ = false;
   std::unique_ptr<WindowsOpenGLVideoRenderer> video_renderer_;
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;

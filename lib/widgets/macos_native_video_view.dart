@@ -11,7 +11,6 @@ const MethodChannel _macOSNativeVideoChannel =
     MethodChannel('nipaplay/macos_native_video');
 const MethodChannel _windowsNativeVideoChannel =
     MethodChannel('nipaplay/windows_native_video');
-const Color _windowsNativeVideoColorKey = Color(0xFF010203);
 final bool _nativeVideoSurfaceDebugLogsEnabled = !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows) &&
@@ -444,7 +443,7 @@ class _MacOSWindowNativeVideoOverlaySurfaceState
         onPointerCancel: _handleWindowsPointerEvent,
         onPointerSignal: _handleWindowsPointerEvent,
         child: const ColoredBox(
-          color: _windowsNativeVideoColorKey,
+          color: Color(0x00000000),
           child: SizedBox.expand(),
         ),
       );

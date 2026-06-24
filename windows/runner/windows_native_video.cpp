@@ -30,7 +30,6 @@ constexpr int64_t kWindowHostedVideoSurfaceId = -1;
 constexpr wchar_t kOverlayWindowClassName[] =
     L"NipaPlayWindowsNativeVideoOverlay";
 constexpr UINT kRenderMessage = WM_APP + 0x4E56;
-constexpr COLORREF kFlutterVideoTransparencyColor = RGB(1, 2, 3);
 
 std::optional<int64_t> ToInt64(const flutter::EncodableValue& value) {
   if (const auto* i32 = std::get_if<int32_t>(&value)) {
@@ -219,52 +218,93 @@ void LogNativeVideo(const std::string& message) {
   std::cout << "NipaPlay WindowsNativeVideo: " << message << std::endl;
 }
 
-bool ApplyFlutterVideoColorKey(HWND hwnd, const char* label) {
+bool HasTransparentWindowBackgroundOverride() {
+  wchar_t value[8] = {};
+  const DWORD length = ::GetEnvironmentVariableW(
+      L"NIPAPLAY_DISABLE_WINDOWS_TRANSPARENT_BACKGROUND", value,
+      static_cast<DWORD>(std::size(value)));
+  return length > 0 && value[0] == L'1';
+}
+
+bool ApplyTransparentAccent(HWND hwnd, const char* label) {
   if (hwnd == nullptr) {
-    LogNativeVideo(std::string(label) + " color key skipped: hwnd=0");
+    LogNativeVideo(std::string(label) + " transparent accent skipped: hwnd=0");
     return false;
   }
 
-  const LONG_PTR previous_style = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-  const LONG_PTR requested_style = previous_style | WS_EX_LAYERED;
-  if (requested_style != previous_style) {
-    ::SetLastError(ERROR_SUCCESS);
-    ::SetWindowLongPtrW(hwnd, GWL_EXSTYLE, requested_style);
-    const DWORD style_error = ::GetLastError();
-    const LONG_PTR current_style = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    if ((current_style & WS_EX_LAYERED) == 0) {
-      LogNativeVideo(std::string(label) +
-                     " color key failed: SetWindowLongPtr error=" +
-                     std::to_string(style_error) + " hwnd=" +
-                     std::to_string(HwndToInt64(hwnd)) + " previousExStyle=" +
-                     std::to_string(static_cast<int64_t>(previous_style)) +
-                     " currentExStyle=" +
-                     std::to_string(static_cast<int64_t>(current_style)));
-      return false;
-    }
+  typedef enum _ACCENT_STATE {
+    ACCENT_DISABLED = 0,
+    ACCENT_ENABLE_GRADIENT = 1,
+    ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+    ACCENT_ENABLE_BLURBEHIND = 3,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+    ACCENT_ENABLE_HOSTBACKDROP = 5,
+    ACCENT_INVALID_STATE = 6
+  } ACCENT_STATE;
+  struct ACCENTPOLICY {
+    int nAccentState;
+    int nFlags;
+    int nColor;
+    int nAnimationId;
+  };
+  struct WINCOMPATTRDATA {
+    int nAttribute;
+    PVOID pData;
+    ULONG ulDataSize;
+  };
+  typedef BOOL(WINAPI* SetWindowCompositionAttributeProc)(
+      HWND, WINCOMPATTRDATA*);
+
+  HMODULE user32 = ::LoadLibraryW(L"user32.dll");
+  if (user32 == nullptr) {
+    LogNativeVideo(std::string(label) +
+                   " transparent accent failed: LoadLibrary user32 error=" +
+                   std::to_string(::GetLastError()));
+    return false;
   }
 
-  ::SetLastError(ERROR_SUCCESS);
-  if (!::SetLayeredWindowAttributes(hwnd, kFlutterVideoTransparencyColor, 0,
-                                    LWA_COLORKEY)) {
+  auto set_window_composition_attribute =
+      reinterpret_cast<SetWindowCompositionAttributeProc>(
+          ::GetProcAddress(user32, "SetWindowCompositionAttribute"));
+  if (set_window_composition_attribute == nullptr) {
     const DWORD error = ::GetLastError();
+    ::FreeLibrary(user32);
     LogNativeVideo(std::string(label) +
-                   " color key failed: SetLayeredWindowAttributes error=" +
+                   " transparent accent failed: missing API error=" +
+                   std::to_string(error));
+    return false;
+  }
+
+  ACCENTPOLICY policy = {};
+  policy.nAccentState = ACCENT_ENABLE_TRANSPARENTGRADIENT;
+  policy.nFlags = 2;
+  policy.nColor = 0x00000000;
+  policy.nAnimationId = 0;
+  WINCOMPATTRDATA data = {};
+  data.nAttribute = 19;
+  data.pData = &policy;
+  data.ulDataSize = sizeof(policy);
+
+  ::SetLastError(ERROR_SUCCESS);
+  const BOOL ok = set_window_composition_attribute(hwnd, &data);
+  const DWORD error = ::GetLastError();
+  ::FreeLibrary(user32);
+  if (!ok) {
+    LogNativeVideo(std::string(label) +
+                   " transparent accent failed: SetWindowCompositionAttribute "
+                   "error=" +
                    std::to_string(error) + " hwnd=" +
                    std::to_string(HwndToInt64(hwnd)));
     return false;
   }
 
-  ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
-                     SWP_FRAMECHANGED);
-  const LONG_PTR final_style = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-  LogNativeVideo(std::string(label) + " color key enabled hwnd=" +
-                 std::to_string(HwndToInt64(hwnd)) + " previousExStyle=" +
-                 std::to_string(static_cast<int64_t>(previous_style)) +
-                 " finalExStyle=" +
-                 std::to_string(static_cast<int64_t>(final_style)) +
-                 " rgb=(1,2,3)");
+  LogNativeVideo(std::string(label) + " transparent accent enabled hwnd=" +
+                 std::to_string(HwndToInt64(hwnd)) + " style=" +
+                 std::to_string(static_cast<int64_t>(
+                     ::GetWindowLongPtrW(hwnd, GWL_STYLE))) +
+                 " exStyle=" +
+                 std::to_string(static_cast<int64_t>(
+                     ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE))));
   return true;
 }
 
@@ -592,11 +632,10 @@ LRESULT CALLBACK OverlayWndProc(HWND hwnd,
       return MA_NOACTIVATE;
     case WM_NCHITTEST:
       LogOverlayInputMessage(hwnd, "WM_NCHITTEST", wparam, lparam);
-      return HTCLIENT;
+      return HTTRANSPARENT;
     case WM_SETCURSOR:
-      ::SetCursor(::LoadCursor(nullptr, IDC_ARROW));
       LogOverlayInputMessage(hwnd, "WM_SETCURSOR", wparam, lparam);
-      return TRUE;
+      return FALSE;
     case WM_MOUSEMOVE:
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
@@ -646,8 +685,12 @@ WindowsNativeVideoPlugin::WindowsNativeVideoPlugin(
     : host_window_(host_window), flutter_view_(flutter_view) {
   LogNativeVideo("plugin created host=" + std::to_string(HwndToInt64(host_window_)) +
                  " flutterView=" + std::to_string(HwndToInt64(flutter_view_)));
-  flutter_view_color_key_enabled_ =
-      ApplyFlutterVideoColorKey(flutter_view_, "FlutterView");
+  if (!HasTransparentWindowBackgroundOverride()) {
+    host_transparent_background_enabled_ =
+        ApplyTransparentAccent(host_window_, "HostWindow");
+  } else {
+    LogNativeVideo("HostWindow transparent accent disabled by environment");
+  }
   channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       messenger, kChannelName, &flutter::StandardMethodCodec::GetInstance());
   channel_->SetMethodCallHandler([this](const auto& call, auto result) {
@@ -661,8 +704,6 @@ WindowsNativeVideoPlugin::~WindowsNativeVideoPlugin() {
 
 void WindowsNativeVideoPlugin::SetFlutterView(HWND flutter_view) {
   flutter_view_ = flutter_view;
-  flutter_view_color_key_enabled_ =
-      ApplyFlutterVideoColorKey(flutter_view_, "FlutterView");
   LogNativeVideo("SetFlutterView flutterView=" +
                  std::to_string(HwndToInt64(flutter_view_)));
 }
@@ -785,14 +826,15 @@ HWND WindowsNativeVideoPlugin::EnsureOverlayWindow() {
   if (host_window_ == nullptr) {
     return nullptr;
   }
-  if (!flutter_view_color_key_enabled_) {
-    flutter_view_color_key_enabled_ =
-        ApplyFlutterVideoColorKey(flutter_view_, "FlutterView");
+  if (!host_transparent_background_enabled_ &&
+      !HasTransparentWindowBackgroundOverride()) {
+    host_transparent_background_enabled_ =
+        ApplyTransparentAccent(host_window_, "HostWindow");
   }
 
   RegisterOverlayWindowClass();
   overlay_window_ = ::CreateWindowExW(
-      WS_EX_NOACTIVATE, kOverlayWindowClassName,
+      WS_EX_NOACTIVATE | WS_EX_TRANSPARENT, kOverlayWindowClassName,
       L"NipaPlay Native Video", WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
       0, 0, 1, 1, host_window_, nullptr, ::GetModuleHandle(nullptr), nullptr);
 
@@ -800,7 +842,7 @@ HWND WindowsNativeVideoPlugin::EnsureOverlayWindow() {
     const LONG_PTR ex_style =
         ::GetWindowLongPtrW(overlay_window_, GWL_EXSTYLE);
     const LONG_PTR no_activate_style =
-        (ex_style | WS_EX_NOACTIVATE) & ~WS_EX_TRANSPARENT;
+        ex_style | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
     if (no_activate_style != ex_style) {
       ::SetWindowLongPtrW(overlay_window_, GWL_EXSTYLE, no_activate_style);
       ::SetWindowPos(overlay_window_, nullptr, 0, 0, 0, 0,
@@ -816,7 +858,7 @@ HWND WindowsNativeVideoPlugin::EnsureOverlayWindow() {
                    " exStyle=" +
                    std::to_string(static_cast<int64_t>(
                        ::GetWindowLongPtrW(overlay_window_, GWL_EXSTYLE))) +
-                   " noActivate=1 videoInputProbe=1");
+                   " noActivate=1 hitTestTransparent=1");
   } else {
     LogNativeVideo("EnsureOverlayWindow failed host=" +
                    std::to_string(HwndToInt64(host_window_)) +
@@ -966,11 +1008,15 @@ flutter::EncodableMap WindowsNativeVideoPlugin::BuildDiagnostics() const {
           : 0;
   result[flutter::EncodableValue("flutterViewLayered")] =
       flutter::EncodableValue((flutter_view_style & WS_EX_LAYERED) != 0);
+  result[flutter::EncodableValue("hostTransparentBackground")] =
+      flutter::EncodableValue(host_transparent_background_enabled_);
+  result[flutter::EncodableValue("flutterViewTransparentBackground")] =
+      flutter::EncodableValue(false);
   result[flutter::EncodableValue("flutterViewColorKey")] =
-      flutter::EncodableValue(flutter_view_color_key_enabled_);
+      flutter::EncodableValue(false);
   result[flutter::EncodableValue("transparentHostMode")] =
-      flutter::EncodableValue(flutter_view_color_key_enabled_
-                                  ? "flutter-view-color-key"
+      flutter::EncodableValue(host_transparent_background_enabled_
+                                  ? "host-accent-transparent-background"
                                   : "disabled");
 
   RECT rect = {};
@@ -1003,8 +1049,14 @@ std::string WindowsNativeVideoPlugin::BuildDiagnosticsSummary() const {
          std::to_string(static_cast<int64_t>(overlay_ex_style)) +
          " overlayInputTransparent=" +
          std::to_string((overlay_ex_style & WS_EX_TRANSPARENT) != 0 ? 1 : 0) +
-         " flutterViewColorKey=" +
-         std::to_string(flutter_view_color_key_enabled_ ? 1 : 0) +
+         " hostTransparentBackground=" +
+         std::to_string(host_transparent_background_enabled_ ? 1 : 0) +
+         " flutterViewTransparentBackground=" +
+         std::to_string(0) +
+         " transparentHostMode=" +
+         (host_transparent_background_enabled_
+              ? "host-accent-transparent-background"
+              : "disabled") +
          " attachedPlayer=" + std::to_string(attached_player_handle_) +
          " visible=" + std::to_string(overlay_visible_ ? 1 : 0) +
          " renderer=" + std::to_string(video_renderer_ != nullptr ? 1 : 0) +

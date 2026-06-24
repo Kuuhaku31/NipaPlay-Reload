@@ -551,10 +551,16 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
   Widget build(BuildContext context) {
     return Consumer<VideoPlayerState>(
       builder: (context, videoState, _) {
+        final transparentWindowsNativeVideo = !kIsWeb &&
+            defaultTargetPlatform == TargetPlatform.windows &&
+            videoState.hasVideo &&
+            videoState.player.prefersPlatformVideoSurface;
         return WillPopScope(
           onWillPop: () => _handleSystemBack(videoState),
           child: CupertinoPageScaffold(
-            backgroundColor: CupertinoColors.black,
+            backgroundColor: transparentWindowsNativeVideo
+                ? Colors.transparent
+                : CupertinoColors.black,
             child: AnnotatedRegion<SystemUiOverlayStyle>(
               value: SystemUiOverlayStyle.light,
               child: SafeArea(
@@ -595,6 +601,9 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
         (kIsWeb ||
             videoState.player.prefersPlatformVideoSurface ||
             (textureId != null && textureId >= 0));
+    final transparentWindowsNativeVideo = !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.windows &&
+        videoState.player.prefersPlatformVideoSurface;
     final progressValue = _isDragging
         ? (_dragProgress ?? videoState.progress)
         : videoState.progress;
@@ -664,7 +673,9 @@ class _CupertinoPlayVideoPageState extends State<CupertinoPlayVideoPage> {
             children: [
               Positioned.fill(
                 child: Container(
-                  color: CupertinoColors.black,
+                  color: transparentWindowsNativeVideo
+                      ? Colors.transparent
+                      : CupertinoColors.black,
                   child: hasVideo
                       ? Center(
                           child: AspectRatio(
