@@ -45,6 +45,19 @@ class _CustomScaffoldState extends State<CustomScaffold> {
   String? _lastAppBarOverlayLogSignature;
   String? _lastVideoUnderlayLogSignature;
 
+  bool get _nativeVideoUnderlayDebugLogsEnabled {
+    if (kReleaseMode || kIsWeb) {
+      return false;
+    }
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return Platform.environment['NIPAPLAY_WINDOWS_HDR_EXIT_TRACE'] == '1';
+    }
+    if (defaultTargetPlatform == TargetPlatform.macOS) {
+      return Platform.environment['NIPAPLAY_MACOS_HDR_EXIT_TRACE'] == '1';
+    }
+    return false;
+  }
+
   bool get _windowHostedVideoUnderlayEnabled {
     if (kIsWeb) {
       return false;
@@ -131,7 +144,7 @@ class _CustomScaffoldState extends State<CustomScaffold> {
         widget.pageIsHome &&
         isDesktopOrTablet &&
         widget.tabPage.isNotEmpty;
-    const enableAnimation = true;
+    const enableAnimation = false;
 
     final currentIndex = widget.tabController!.index;
     final preloadIndices = widget.pageIsHome
@@ -148,9 +161,6 @@ class _CustomScaffoldState extends State<CustomScaffold> {
     final bool hasNativeVideoSurface = context.select<VideoPlayerState, bool>(
       (videoState) => videoState.player.prefersPlatformVideoSurface,
     );
-    final Rect? videoUnderlayRect = context.select<VideoPlayerState, Rect?>(
-      (videoState) => videoState.macOSWindowHostedVideoRect,
-    );
     final bool useVideoUnderlay = _windowHostedVideoUnderlayEnabled &&
         hasNativeVideoSurface &&
         widget.pageIsHome &&
@@ -158,7 +168,6 @@ class _CustomScaffoldState extends State<CustomScaffold> {
         hasVideo;
     _logVideoUnderlayState(
       enabled: useVideoUnderlay,
-      rect: videoUnderlayRect,
       hasNativeVideoSurface: hasNativeVideoSurface,
       hasVideo: hasVideo,
       currentIndex: currentIndex,
@@ -250,8 +259,8 @@ class _CustomScaffoldState extends State<CustomScaffold> {
       ),
     );
 
-    return BackgroundWithBlur(
-      transparentCutout: useVideoUnderlay ? videoUnderlayRect : null,
+    return _WindowHostedVideoBackground(
+      enabled: useVideoUnderlay,
       child: scaffold,
     );
   }
@@ -280,21 +289,19 @@ class _CustomScaffoldState extends State<CustomScaffold> {
 
   void _logVideoUnderlayState({
     required bool enabled,
-    required Rect? rect,
     required bool hasNativeVideoSurface,
     required bool hasVideo,
     required int currentIndex,
   }) {
+    if (!_nativeVideoUnderlayDebugLogsEnabled) {
+      return;
+    }
     final signature = [
       defaultTargetPlatform.name,
       enabled.toString(),
       hasNativeVideoSurface.toString(),
       hasVideo.toString(),
       currentIndex.toString(),
-      rect?.left.toStringAsFixed(1) ?? 'null',
-      rect?.top.toStringAsFixed(1) ?? 'null',
-      rect?.width.toStringAsFixed(1) ?? 'null',
-      rect?.height.toStringAsFixed(1) ?? 'null',
     ].join('|');
     if (signature == _lastVideoUnderlayLogSignature) {
       return;
@@ -303,7 +310,34 @@ class _CustomScaffoldState extends State<CustomScaffold> {
     debugPrint(
       '[NativeVideoUnderlay] platform=${defaultTargetPlatform.name} '
       'enabled=$enabled hasNativeVideoSurface=$hasNativeVideoSurface '
-      'hasVideo=$hasVideo currentIndex=$currentIndex rect=$rect',
+      'hasVideo=$hasVideo currentIndex=$currentIndex',
+    );
+  }
+}
+
+class _WindowHostedVideoBackground extends StatelessWidget {
+  const _WindowHostedVideoBackground({
+    required this.enabled,
+    required this.child,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) {
+      return BackgroundWithBlur(child: child);
+    }
+    return Selector<VideoPlayerState, Rect?>(
+      selector: (_, videoState) => videoState.macOSWindowHostedVideoRect,
+      builder: (context, videoUnderlayRect, child) {
+        return BackgroundWithBlur(
+          transparentCutout: videoUnderlayRect,
+          child: child!,
+        );
+      },
+      child: child,
     );
   }
 }
