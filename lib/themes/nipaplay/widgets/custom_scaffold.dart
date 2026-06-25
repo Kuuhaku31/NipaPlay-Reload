@@ -161,8 +161,12 @@ class _CustomScaffoldState extends State<CustomScaffold> {
     final bool hasNativeVideoSurface = context.select<VideoPlayerState, bool>(
       (videoState) => videoState.player.prefersPlatformVideoSurface,
     );
-    final bool useVideoUnderlay = _windowHostedVideoUnderlayEnabled &&
-        hasNativeVideoSurface &&
+    final bool hasWindowHostedVideoSurface =
+        context.select<VideoPlayerState, bool>(
+      (videoState) => videoState.player.usesWindowOverlayVideoSurface,
+    );
+    final bool useVideoUnderlay = (hasWindowHostedVideoSurface ||
+            (_windowHostedVideoUnderlayEnabled && hasNativeVideoSurface)) &&
         widget.pageIsHome &&
         currentIndex == 1 &&
         hasVideo;
@@ -330,7 +334,7 @@ class _WindowHostedVideoBackground extends StatelessWidget {
       return BackgroundWithBlur(child: child);
     }
     return Selector<VideoPlayerState, Rect?>(
-      selector: (_, videoState) => videoState.macOSWindowHostedVideoRect,
+      selector: (_, videoState) => videoState.windowHostedVideoRect,
       builder: (context, videoUnderlayRect, child) {
         return BackgroundWithBlur(
           transparentCutout: videoUnderlayRect,

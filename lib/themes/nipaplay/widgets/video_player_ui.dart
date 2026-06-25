@@ -233,6 +233,12 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
     return false;
   }
 
+  bool _shouldUseWindowHostedVideoOverlay(VideoPlayerState videoState) {
+    return videoState.player.usesWindowOverlayVideoSurface ||
+        (_shouldUseMacOSWindowHostedVideoOverlay &&
+            videoState.player.prefersPlatformVideoSurface);
+  }
+
   double getFontSize(VideoPlayerState videoState) {
     return videoState.actualDanmakuFontSize;
   }
@@ -296,12 +302,28 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
     if (!mounted) {
       return;
     }
-    _videoPlayerStateInstance?.setMacOSWindowHostedVideoRect(rect);
+    _videoPlayerStateInstance?.setWindowHostedVideoRect(rect);
   }
 
   Widget _buildVideoSurfaceStage(VideoPlayerState videoState, int? textureId) {
-    if (videoState.player.prefersPlatformVideoSurface &&
-        _shouldUseMacOSWindowHostedVideoOverlay) {
+    if (_shouldUseWindowHostedVideoOverlay(videoState)) {
+      // iOS only: the native plane must not extend under the notch, so we
+      // letterbox the video into a centered safe-area sub-rect here and keep
+      // the surroundings transparent; Erika owns the black window background,
+      // which shows through as the bars.
+      //
+      // macOS keeps the full-bleed surface: there is no notch and Erika
+      // letterboxes natively into a full-screen plane. Flutter must NOT shrink
+      // the plane or paint around it, or the app UI behind shows through the
+      // (now transparent) bars.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        return Center(
+          child: AspectRatio(
+            aspectRatio: videoState.aspectRatio,
+            child: _buildVideoSurface(videoState, textureId),
+          ),
+        );
+      }
       return _buildVideoSurface(videoState, textureId);
     }
 
@@ -324,11 +346,8 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
         _macosNativeVideoViewId != null;
   }
 
-  bool _shouldKeepMacOSNativeVideoSurface(VideoPlayerState videoState) {
-    return !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.windows) &&
-        videoState.player.prefersPlatformVideoSurface &&
+  bool _shouldKeepWindowHostedVideoSurface(VideoPlayerState videoState) {
+    return _shouldUseWindowHostedVideoOverlay(videoState) &&
         videoState.currentVideoPath != null &&
         videoState.status != PlayerStatus.idle &&
         videoState.status != PlayerStatus.error &&
@@ -901,7 +920,7 @@ class _VideoPlayerUIState extends State<VideoPlayerUI>
                 videoState.player.prefersPlatformVideoSurface ||
                 (textureId != null && textureId >= 0);
 
-            final shouldKeepNativeSurface = _shouldKeepMacOSNativeVideoSurface(
+            final shouldKeepNativeSurface = _shouldKeepWindowHostedVideoSurface(
               videoState,
             );
 
