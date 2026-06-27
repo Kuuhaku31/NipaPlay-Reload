@@ -219,7 +219,8 @@ class ErikaPlayerAdapter implements AbstractPlayer {
   static bool get _isSupported =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.macOS ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+          defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.windows);
 
   bool get prefersPlatformVideoSurface => _isSupported;
 
@@ -426,10 +427,7 @@ class ErikaPlayerAdapter implements AbstractPlayer {
       return null;
     }
     try {
-      final Uint8List? bytes = await _player.screenshot(
-        width: width > 0 ? width : null,
-        height: height > 0 ? height : null,
-      );
+      final Uint8List? bytes = await _player.screenshot();
       if (bytes == null || bytes.isEmpty) {
         return null;
       }
@@ -1066,7 +1064,8 @@ class ErikaPlayerAdapter implements AbstractPlayer {
 
   void _ensureSupported() {
     if (!_isSupported) {
-      throw UnsupportedError('Erika is currently only wired on macOS/iOS.');
+      throw UnsupportedError(
+          'Erika is currently only wired on macOS/iOS/Windows.');
     }
   }
 }
