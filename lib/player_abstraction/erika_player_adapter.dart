@@ -101,27 +101,21 @@ class _ErikaDanmakuConfigPatch {
     );
   }
 
-  _ErikaDanmakuConfigPatch differenceFrom(
-    _ErikaDanmakuConfigPatch? previous,
-  ) {
+  _ErikaDanmakuConfigPatch differenceFrom(_ErikaDanmakuConfigPatch? previous) {
     return _ErikaDanmakuConfigPatch(
       enabled: _changed(enabled, previous?.enabled) ? enabled : null,
       fontSize: _changed(fontSize, previous?.fontSize) ? fontSize : null,
       opacity: _changed(opacity, previous?.opacity) ? opacity : null,
       displayArea:
           _changed(displayArea, previous?.displayArea) ? displayArea : null,
-      scrollDurationSeconds: _changed(
-        scrollDurationSeconds,
-        previous?.scrollDurationSeconds,
-      )
-          ? scrollDurationSeconds
-          : null,
-      scrollSpeedFactor: _changed(
-        scrollSpeedFactor,
-        previous?.scrollSpeedFactor,
-      )
-          ? scrollSpeedFactor
-          : null,
+      scrollDurationSeconds:
+          _changed(scrollDurationSeconds, previous?.scrollDurationSeconds)
+              ? scrollDurationSeconds
+              : null,
+      scrollSpeedFactor:
+          _changed(scrollSpeedFactor, previous?.scrollSpeedFactor)
+              ? scrollSpeedFactor
+              : null,
       trackGapRatio: _changed(trackGapRatio, previous?.trackGapRatio)
           ? trackGapRatio
           : null,
@@ -199,8 +193,9 @@ class ErikaPlayerAdapter implements AbstractPlayer {
   DateTime? _seekFenceUntil;
   bool _disposed = false;
 
-  static const Duration _danmakuConfigCoalesceDelay =
-      Duration(milliseconds: 50);
+  static const Duration _danmakuConfigCoalesceDelay = Duration(
+    milliseconds: 50,
+  );
   Timer? _danmakuConfigTimer;
   bool _danmakuConfigInFlight = false;
   _ErikaDanmakuConfigPatch? _pendingDanmakuConfig;
@@ -217,8 +212,9 @@ class ErikaPlayerAdapter implements AbstractPlayer {
   final Set<int> _externalSubtitleTrackIds = <int>{};
   int _externalSubtitleGeneration = 0;
 
-  static const bool _subtitleTraceEnabled =
-      bool.fromEnvironment('NIPAPLAY_ERIKA_SUBTITLE_TRACE');
+  static const bool _subtitleTraceEnabled = bool.fromEnvironment(
+    'NIPAPLAY_ERIKA_SUBTITLE_TRACE',
+  );
 
   static bool get _isSupported =>
       !kIsWeb &&
@@ -305,10 +301,12 @@ class ErikaPlayerAdapter implements AbstractPlayer {
     }
     final index = value.first;
     if (index >= 0 && index < _subtitleTrackInfos.length) {
-      unawaited(_selectSubtitleTrack(
-        _subtitleTrackInfos[index].id,
-        reason: 'activeSubtitleTracks index=$index',
-      ));
+      unawaited(
+        _selectSubtitleTrack(
+          _subtitleTrackInfos[index].id,
+          reason: 'activeSubtitleTracks index=$index',
+        ),
+      );
     } else {
       _subtitleTrace(
         'activeSubtitleTracks ignored out-of-range index=$index '
@@ -471,9 +469,11 @@ class ErikaPlayerAdapter implements AbstractPlayer {
       case 'sub-scale':
         final scale = double.tryParse(value);
         if (scale != null && scale.isFinite) {
-          unawaited(_player.setSubtitleScale(scale).catchError((Object error) {
-            debugPrint('Erika: set subtitle scale failed: $error');
-          }));
+          unawaited(
+            _player.setSubtitleScale(scale).catchError((Object error) {
+              debugPrint('Erika: set subtitle scale failed: $error');
+            }),
+          );
         }
     }
   }
@@ -526,9 +526,11 @@ class ErikaPlayerAdapter implements AbstractPlayer {
     );
 
     for (final trackId in oldTrackIds) {
-      unawaited(_player.removeSubtitleTrack(trackId).catchError((Object error) {
-        debugPrint('Erika: remove external subtitle failed: $error');
-      }));
+      unawaited(
+        _player.removeSubtitleTrack(trackId).catchError((Object error) {
+          debugPrint('Erika: remove external subtitle failed: $error');
+        }),
+      );
     }
 
     if (path.trim().isEmpty) {
@@ -582,7 +584,8 @@ class ErikaPlayerAdapter implements AbstractPlayer {
     final watch = Stopwatch()..start();
     try {
       _subtitleTrace(
-          'selectSubtitleTrack begin track_id=$trackId reason=$reason');
+        'selectSubtitleTrack begin track_id=$trackId reason=$reason',
+      );
       await _player.selectSubtitleTrack(trackId);
       watch.stop();
       _subtitleTrace(
@@ -961,8 +964,9 @@ class ErikaPlayerAdapter implements AbstractPlayer {
 
     var updatedInfo = _mediaInfo;
     if (event.duration > Duration.zero) {
-      updatedInfo =
-          updatedInfo.copyWith(duration: event.duration.inMilliseconds);
+      updatedInfo = updatedInfo.copyWith(
+        duration: event.duration.inMilliseconds,
+      );
     }
     if (event.video.width > 0 && event.video.height > 0) {
       updatedInfo = updatedInfo.copyWith(
