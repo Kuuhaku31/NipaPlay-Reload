@@ -552,7 +552,6 @@ class ErikaPlayerAdapter implements AbstractPlayer {
       );
       final trackId = await _player.addExternalSubtitle(path);
       addWatch.stop();
-      _externalSubtitleTrackIds.add(trackId);
       _subtitleTrace(
         'addExternalSubtitle ok generation=$generation track_id=$trackId '
         'elapsed_ms=${addWatch.elapsedMilliseconds}',
@@ -565,6 +564,7 @@ class ErikaPlayerAdapter implements AbstractPlayer {
         );
         return;
       }
+      _externalSubtitleTrackIds.add(trackId);
       await _selectSubtitleTrack(trackId, reason: 'after addExternalSubtitle');
     } catch (error) {
       debugPrint('Erika: add external subtitle failed: $error');
