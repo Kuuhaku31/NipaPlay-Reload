@@ -183,7 +183,7 @@ jobs:
                   '. + {author_login: $author_login, author_url: $author_url}')
               fi
             else
-              echo "Warning: Failed to query author for commit ${short_sha}."
+              echo "Warning: Failed to query author for commit ${short_sha}." >&2
             fi
 
             echo "$commit_json"
