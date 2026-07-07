@@ -108,4 +108,7 @@ class MdkPlayerAdapter implements AbstractPlayer {
 
   // 详细播放技术信息（不支持MDK的平台返回空）
   Map<String, dynamic> getDetailedMediaInfo() => const <String, dynamic>{};
+
+  @override
+  void setUserAgent(String ua) {}
 }
