@@ -178,13 +178,20 @@ void main(List<String> args) async {
 
   final pipLaunchPayload = DesktopPipWindowService.tryParseLaunchPayload(args);
   final externalPlayerSession = ExternalPlayerSession.tryParseLaunchArguments(args);
+  final externalPlayerWindowId = args.length > 1 ? int.tryParse(args[1]) : null;
   final bool isSubWindowProcess =
       args.isNotEmpty && args.first == 'multi_window';
   if (isSubWindowProcess) {
 
     // 如果是 Linux 平台并且存在外部播放器会话, 则运行外部播放器控制台应用
-    if (Platform.isLinux && externalPlayerSession != null) {
-      await runExternalPlayerConsoleApp(externalPlayerSession);
+    if (Platform.isLinux &&
+        externalPlayerSession != null &&
+        externalPlayerWindowId != null &&
+        externalPlayerWindowId > 0) {
+      await runExternalPlayerConsoleApp(
+        externalPlayerSession,
+        externalPlayerWindowId,
+      );
       return;
     }
 

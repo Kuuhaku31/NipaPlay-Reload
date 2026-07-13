@@ -9,6 +9,7 @@ import 'dart:convert';
 class ExternalPlayerSession {
 
   const ExternalPlayerSession({
+    required this.id,
     required this.playerPath,
     required this.mediaPath,
     required this.processId,
@@ -19,6 +20,7 @@ class ExternalPlayerSession {
 
   static const windowType = 'externalPlayerConsole';
 
+  final String  id;           // 会话 ID
   final String  playerPath;   // 播放器路径
   final String  mediaPath;    // 媒体路径
   final int     processId;    // 播放器进程 ID
@@ -28,6 +30,7 @@ class ExternalPlayerSession {
 
   // 将当前会话对象转换为 JSON 格式的 Map
   Map<String, dynamic> toJson() => {
+    'id'          : id,
     'windowType'  : windowType,
     'playerPath'  : playerPath,
     'mediaPath'   : mediaPath,
@@ -43,26 +46,30 @@ class ExternalPlayerSession {
   // 尝试从启动参数中解析出外部播放器会话对象, 如果参数不符合预期则返回 null
   static ExternalPlayerSession? tryParseLaunchArguments(List<String> args) {
 
-    if (args.length < 3 || args.first != 'multi_window') return null; // 参数检查
+    if (args.length < 3 || args.first != 'multi_window') return null;
 
     try {
-
       // 解析第三个参数为 JSON 对象
-      final value = jsonDecode(args[2]);
-      if (value is! Map<String, dynamic> || value['windowType'] != windowType) return null;
+      final dynamic decoded = jsonDecode(args[2]);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['windowType'] != windowType) {
+        return null;
+      }
 
       // 检查并提取必要的字段
-      final pid = _asInt(value['processId']);
-      if (pid == null || pid <= 0) return null;
+      final String? id = _asString(decoded['id']);
+      final int? processId = _asInt(decoded['processId']);
+      if (id == null || processId == null || processId <= 0) return null;
 
       // 构造并返回 ExternalPlayerSession 对象
       return ExternalPlayerSession(
-        playerPath  : _asString(value['playerPath'  ]) ?? '',
-        mediaPath   : _asString(value['mediaPath'   ]) ?? '',
-        processId   : pid,
-        animeTitle  : _asString(value['animeTitle'  ]),
-        episodeTitle: _asString(value['episodeTitle']),
-        episodeId   : _asInt   (value['episodeId'   ]),
+        id          : id,
+        playerPath  : _asString(decoded['playerPath'  ]) ?? '',
+        mediaPath   : _asString(decoded['mediaPath'   ]) ?? '',
+        processId   : processId,
+        animeTitle  : _asString(decoded['animeTitle']),
+        episodeTitle: _asString(decoded['episodeTitle']),
+        episodeId   : _asInt(decoded['episodeId']),
       );
     }
     catch (_) { return null; } // 解析失败则返回 null

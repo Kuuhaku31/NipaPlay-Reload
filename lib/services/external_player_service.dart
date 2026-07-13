@@ -19,6 +19,7 @@ import 'package:nipaplay/utils/danmaku_xml_utils.dart';
 import 'package:nipaplay/utils/video_player_state.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 class ExternalPlayerConfig {
   final bool enabled;
@@ -300,6 +301,7 @@ class ExternalPlayerService {
 
       // 尝试打开一个新的外部播放器控制台窗口，并传入会话数据
       await ExternalPlayerConsoleService.open(ExternalPlayerSession(
+        id: const Uuid().v4(),
         playerPath: playerPath,
         mediaPath: mediaPath,
         processId: launchResult.processId!,

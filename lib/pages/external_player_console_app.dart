@@ -3,13 +3,17 @@
 
 import 'package:flutter/material.dart';
 import 'package:nipaplay/models/external_player_session.dart';
+import 'package:nipaplay/services/external_player_console_service.dart';
 
 
 /// 启动控制台 Flutter 应用
 /// 当 main() 判断当前窗口属于外部播放器控制台时, 会调用这个函数
-Future<void> runExternalPlayerConsoleApp(ExternalPlayerSession session) async {
+Future<void> runExternalPlayerConsoleApp(
+  ExternalPlayerSession session,
+  int windowId,
+) async {
   // 把 ExternalPlayerConsoleApp 设置为当前子窗口 Flutter Engine 的根组件
-  runApp(ExternalPlayerConsoleApp(session: session));
+  runApp(ExternalPlayerConsoleApp(session: session, windowId: windowId));
 }
 
 
@@ -18,10 +22,17 @@ Future<void> runExternalPlayerConsoleApp(ExternalPlayerSession session) async {
 class ExternalPlayerConsoleApp extends StatelessWidget {
 
   // 构造函数, 接收一个 ExternalPlayerSession 对象作为参数
-  const ExternalPlayerConsoleApp({super.key, required this.session});
+  const ExternalPlayerConsoleApp({
+    super.key,
+    required this.session,
+    required this.windowId,
+  });
 
   // 外部播放器会话对象
   final ExternalPlayerSession session;
+
+  // 当前弹幕控制台的窗口 ID
+  final int windowId;
 
   // 构建 Flutter 控件树, 显示外部播放器会话信息
   @override
@@ -34,10 +45,21 @@ class ExternalPlayerConsoleApp extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.all(24),
           children: [
+            _row('会话 ID', session.id),
             _row('番剧', session.animeTitle ?? '未知番剧'),
             _row('剧集', session.episodeTitle ?? '未知剧集'),
             _row('episodeId', session.episodeId?.toString() ?? '-'),
             _row('播放器 PID', session.processId.toString()),
+            const SizedBox(height: 20),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: () => ExternalPlayerConsoleService
+                    .closePlayerAndWindow(session, windowId),
+                icon: const Icon(Icons.close),
+                label: const Text('关闭控制台和播放器'),
+              ),
+            ),
           ],
         ),
       ),
