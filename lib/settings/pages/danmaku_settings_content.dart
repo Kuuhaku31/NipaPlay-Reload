@@ -820,6 +820,21 @@ class _DanmakuSettingsContentState extends State<DanmakuSettingsContent> {
               },
             ),
 
+            Divider(color: colorScheme.onSurface.withValues(alpha: 0.12), height: 1),
+
+            // 弹幕描边开关
+            Consumer<VideoPlayerState>(
+              builder: (context, videoState, child) {
+                return AdaptiveSettingsTile.toggle(
+                  title: context.l10n.danmakuOutlineEnabledTitle,
+                  subtitle: context.l10n.danmakuOutlineEnabledSubtitle,
+                  icon: Icons.border_color,
+                  value: videoState.danmakuOutlineEnabled,
+                  onChanged: videoState.setDanmakuOutlineEnabled,
+                );
+              },
+            ),
+
             Divider(
                 color: colorScheme.onSurface.withValues(alpha: 0.12),
                 height: 1),

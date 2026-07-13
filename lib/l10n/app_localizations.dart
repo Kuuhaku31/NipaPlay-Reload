@@ -231,6 +231,18 @@ abstract class AppLocalizations {
   /// **'调整弹幕文字不透明度，新打开的视频将应用此设置。'**
   String get danmakuOpacitySubtitle;
 
+  /// No description provided for @danmakuOutlineEnabledTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'启用弹幕描边'**
+  String get danmakuOutlineEnabledTitle;
+
+  /// No description provided for @danmakuOutlineEnabledSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'控制是否显示弹幕文字描边，新打开的视频将应用此设置。'**
+  String get danmakuOutlineEnabledSubtitle;
+
   /// No description provided for @externalPlayerConsoleResume.
   ///
   /// In zh, this message translates to:
