@@ -43,12 +43,14 @@ class DanmakuLaunchAssets {
   const DanmakuLaunchAssets({required this.assPath, required this.luaPath});
 }
 
-/// 外部播放器启动结果。主窗口控制台仅在取得实际 PID 时建立会话。
+/// 外部播放器启动结果, 主窗口控制台仅在取得实际 PID 时建立会话
 class ExternalPlayerLaunchResult {
-  const ExternalPlayerLaunchResult({required this.started, this.processId});
 
-  final bool started;
-  final int? processId;
+  const ExternalPlayerLaunchResult({required this.started, this.processId, this.ipcPath});
+
+  final bool started;    // 是否成功启动外部播放器进程 (不代表播放成功)
+  final int? processId;  // 外部播放器进程 ID
+  final String? ipcPath; // mpv JSON IPC Unix Socket 路径 (仅 mpv/mpv.net 有)
 }
 
 class ExternalPlayerService {
@@ -307,6 +309,7 @@ class ExternalPlayerService {
           animeTitle: history?.animeName ?? item.title,
           episodeTitle: history?.episodeTitle ?? item.subtitle,
           episodeId: item.episodeId,
+          ipcPath: launchResult.ipcPath,
         ),
       );
     }
@@ -703,26 +706,38 @@ end)
       }
 
       // Linux
-      debugPrint(
-        '[ExtPlayer] launch: Linux 直启 + extraArgs=$extraArgs, mode=detached',
-      );
+      String? ipcPath;
+      var linuxExtraArgs = extraArgs;
+      // 目前仅支持 mpv 的 JSON IPC
+      if (detectPlayer(resolvedPath) == ExternalPlayerType.mpv) {
+        ipcPath = _createMpvIpcPath();
+        linuxExtraArgs = [...extraArgs, '--input-ipc-server=$ipcPath'];
+        debugPrint('[ExtPlayer] 已启用 mpv JSON IPC: $ipcPath');
+      }
+      debugPrint('[ExtPlayer] launch: Linux 直启 + extraArgs=$linuxExtraArgs, mode=detached',);
 
-      // 外部播放器改为独立进程
+      // 启动外部播放器
       final proc = await Process.start(
         resolvedPath,
-        [mediaPath, ...extraArgs],
-        mode: ProcessStartMode.detached,
+        [mediaPath, ...linuxExtraArgs],
+        mode: ProcessStartMode.detached, // 外部播放器为独立进程
       );
 
       // 打印派生进程 PID，方便调试
       debugPrint('[ExtPlayer] launch: 已派生 pid=${proc.pid}');
 
-      return ExternalPlayerLaunchResult(started: true, processId: proc.pid);
+      return ExternalPlayerLaunchResult(started: true, processId: proc.pid, ipcPath: ipcPath);
     } catch (e, st) {
       debugPrint('[ExtPlayer] launch: 启动异常: $e');
       debugPrintStack(stackTrace: st);
       return const ExternalPlayerLaunchResult(started: false);
     }
+  }
+
+  /// 创建 Linux 平台 mpv JSON IPC Unix Socket 路径, 确保唯一且不冲突
+  static String _createMpvIpcPath() {
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    return '${Directory.systemTemp.path}${Platform.pathSeparator}' 'nipaplay_mpv_${pid}_$timestamp.sock';
   }
 
   static Future<String?> _resolvePlayerPath(String path) async {

@@ -21,7 +21,10 @@ class ExternalPlayerConsolePage extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 720),
                 child: session == null
                     ? const _EmptyConsole()
-                    : _ConsoleCard(session: session),
+                    : _ConsoleCard(
+                        session: session,
+                        progress: service.progress,
+                      ),
               ),
             ),
           ),
@@ -64,9 +67,10 @@ class _EmptyConsole extends StatelessWidget {
 }
 
 class _ConsoleCard extends StatelessWidget {
-  const _ConsoleCard({required this.session});
+  const _ConsoleCard({required this.session, required this.progress});
 
   final ExternalPlayerSession session;
+  final ExternalPlayerPlaybackProgress? progress;
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +101,8 @@ class _ConsoleCard extends StatelessWidget {
             _row('播放器 PID', session.processId.toString()),
             _row('媒体路径', session.mediaPath),
             const SizedBox(height: 20),
+            _buildProgress(context),
+            const SizedBox(height: 20),
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton.icon(
@@ -124,4 +130,43 @@ class _ConsoleCard extends StatelessWidget {
       ],
     ),
   );
+
+  Widget _buildProgress(BuildContext context) {
+    final theme = Theme.of(context);
+    final supportsProgress = session.ipcPath != null;
+    final current = progress;
+    final progressText = !supportsProgress
+        ? '当前播放器暂不支持进度同步'
+        : current == null
+            ? '正在获取播放进度…'
+            : '${_formatDuration(current.position)} / '
+                '${_formatDuration(current.duration)}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('播放进度', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 10),
+        LinearProgressIndicator(
+          value: supportsProgress ? current?.fraction : 0,
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(3),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          progressText,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDuration(Duration value) {
+    final hours = value.inHours;
+    final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+  }
 }

@@ -1,95 +1,208 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nipaplay/models/external_player_session.dart';
 import 'package:nipaplay/services/external_player_console_service.dart';
 
-ExternalPlayerSession _session(int processId) => ExternalPlayerSession(
-      playerPath: '/bin/mpv',
-      mediaPath: '/video/$processId.mkv',
-      processId: processId,
-      animeTitle: '测试番剧',
-      episodeTitle: '第 1 话',
-      episodeId: 12345,
-    );
+ExternalPlayerSession _session(Process process, {String? ipcPath}) {
+  return ExternalPlayerSession(
+    playerPath: '/bin/mpv',
+    mediaPath: '/video/${process.pid}.mkv',
+    processId: process.pid,
+    animeTitle: '测试番剧',
+    episodeTitle: '第 1 话',
+    episodeId: 12345,
+    ipcPath: ipcPath,
+  );
+}
+
+Future<Process> _startPlayer({String duration = '30'}) {
+  return Process.start('/bin/sleep', [duration]);
+}
+
+Future<void> _stopProcess(Process process) async {
+  Process.killPid(process.pid, ProcessSignal.sigterm);
+  try {
+    await process.exitCode.timeout(const Duration(seconds: 1));
+  } on TimeoutException {
+    Process.killPid(process.pid, ProcessSignal.sigkill);
+    await process.exitCode;
+  }
+}
+
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (condition()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail('Condition was not met within $timeout');
+}
 
 void main() {
-  test('only keeps the latest external player session', () async {
-    final terminated = <int>[];
-    final service = ExternalPlayerConsoleService(
-      processProbe: (_) async => true,
-      terminateProcess: (pid) {
-        terminated.add(pid);
-        return true;
-      },
-      monitorInterval: const Duration(days: 1),
-    );
-    addTearDown(service.dispose);
+  group(
+    'ExternalPlayerConsoleService',
+    () {
+      test('only keeps the latest external player session', () async {
+        final firstProcess = await _startPlayer();
+        final secondProcess = await _startPlayer();
+        final service = ExternalPlayerConsoleService(
+          monitorInterval: const Duration(days: 1),
+        );
+        addTearDown(() async {
+          service.dispose();
+          await _stopProcess(firstProcess);
+          await _stopProcess(secondProcess);
+        });
 
-    await service.showSession(_session(100));
-    await service.showSession(_session(101));
+        await service.showSession(_session(firstProcess));
+        await service.showSession(_session(secondProcess));
 
-    expect(service.session?.processId, 101);
-    expect(terminated, <int>[100]);
-  });
+        expect(service.session?.processId, secondProcess.pid);
+        expect(service.progress, isNull);
+        expect(await firstProcess.exitCode, isNotNull);
+      });
 
-  test('close button behavior terminates player and hides console', () async {
-    final terminated = <int>[];
-    final service = ExternalPlayerConsoleService(
-      processProbe: (_) async => true,
-      terminateProcess: (pid) {
-        terminated.add(pid);
-        return true;
-      },
-      monitorInterval: const Duration(days: 1),
-    );
-    addTearDown(service.dispose);
-    await service.showSession(_session(100));
+      test('close hides the session and terminates the player', () async {
+        final process = await _startPlayer();
+        final service = ExternalPlayerConsoleService(
+          monitorInterval: const Duration(days: 1),
+        );
+        addTearDown(() async {
+          service.dispose();
+          await _stopProcess(process);
+        });
+        await service.showSession(_session(process));
 
-    await service.closePlayerAndConsole();
-    await service.closePlayerAndConsole();
+        await service.closePlayerAndConsole();
+        await service.closePlayerAndConsole();
 
-    expect(service.session, isNull);
-    expect(terminated, <int>[100]);
-  });
+        expect(service.session, isNull);
+        expect(service.progress, isNull);
+        expect(await process.exitCode, isNotNull);
+      });
 
-  test('console hides when player exits without terminating it again',
-      () async {
-    final terminated = <int>[];
-    final service = ExternalPlayerConsoleService(
-      processProbe: (_) async => false,
-      terminateProcess: (pid) {
-        terminated.add(pid);
-        return true;
-      },
-      monitorInterval: const Duration(days: 1),
-    );
-    addTearDown(service.dispose);
-    await service.showSession(_session(100));
+      test('automatically clears the session after the player exits', () async {
+        final process = await _startPlayer(duration: '0.05');
+        final service = ExternalPlayerConsoleService(
+          monitorInterval: const Duration(milliseconds: 10),
+        );
+        addTearDown(() async {
+          service.dispose();
+          await _stopProcess(process);
+        });
+        await service.showSession(_session(process));
 
-    await service.refreshProcessState();
+        await _waitUntil(() => service.session == null);
 
-    expect(service.session, isNull);
-    expect(terminated, isEmpty);
-  });
+        expect(service.progress, isNull);
+      });
 
-  test('stale process check does not hide a replacement session', () async {
-    final probeResult = Completer<bool>();
-    final service = ExternalPlayerConsoleService(
-      processProbe: (_) => probeResult.future,
-      terminateProcess: (_) => true,
-      monitorInterval: const Duration(days: 1),
-    );
-    addTearDown(service.dispose);
-    final first = _session(100);
-    final replacement = _session(100);
-    await service.showSession(first);
+      test('reads playback progress through mpv JSON IPC', () async {
+        final process = await _startPlayer();
+        final tempDir =
+            await Directory.systemTemp.createTemp('nipaplay_ipc_test_');
+        final socketPath = '${tempDir.path}/mpv.sock';
+        final server = await ServerSocket.bind(
+          InternetAddress(socketPath, type: InternetAddressType.unix),
+          0,
+        );
+        server.listen((client) {
+          client
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .listen((line) {
+            final request = jsonDecode(line) as Map<String, dynamic>;
+            final requestId = request['request_id'];
+            client.writeln(jsonEncode({
+              'data': requestId == 1 ? 75.5 : 1500.0,
+              'error': 'success',
+              'request_id': requestId,
+            }));
+          });
+        });
+        final service = ExternalPlayerConsoleService(
+          monitorInterval: const Duration(milliseconds: 10),
+        );
+        addTearDown(() async {
+          service.dispose();
+          await server.close();
+          await _stopProcess(process);
+          await tempDir.delete(recursive: true);
+        });
+        await service.showSession(_session(process, ipcPath: socketPath));
 
-    final checking = service.refreshProcessState();
-    await service.showSession(replacement);
-    probeResult.complete(false);
-    await checking;
+        await _waitUntil(() => service.progress != null);
 
-    expect(service.session, same(replacement));
-  });
+        expect(
+          service.progress?.position,
+          const Duration(seconds: 75, milliseconds: 500),
+        );
+        expect(service.progress?.duration, const Duration(minutes: 25));
+        expect(service.progress?.fraction, closeTo(0.0503, 0.0001));
+      });
+
+      test('replacing a session clears the previous progress', () async {
+        final firstProcess = await _startPlayer();
+        final secondProcess = await _startPlayer();
+        final tempDir =
+            await Directory.systemTemp.createTemp('nipaplay_ipc_test_');
+        final socketPath = '${tempDir.path}/mpv.sock';
+        final server = await ServerSocket.bind(
+          InternetAddress(socketPath, type: InternetAddressType.unix),
+          0,
+        );
+        server.listen((client) {
+          client
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .listen((line) {
+            final request = jsonDecode(line) as Map<String, dynamic>;
+            final requestId = request['request_id'];
+            client.writeln(jsonEncode({
+              'data': requestId == 1 ? 60.0 : 1200.0,
+              'error': 'success',
+              'request_id': requestId,
+            }));
+          });
+        });
+        final service = ExternalPlayerConsoleService(
+          monitorInterval: const Duration(milliseconds: 10),
+        );
+        addTearDown(() async {
+          service.dispose();
+          await server.close();
+          await _stopProcess(firstProcess);
+          await _stopProcess(secondProcess);
+          await tempDir.delete(recursive: true);
+        });
+        await service.showSession(
+          _session(firstProcess, ipcPath: socketPath),
+        );
+        await _waitUntil(() => service.progress != null);
+
+        await service.showSession(_session(secondProcess));
+
+        expect(service.session?.processId, secondProcess.pid);
+        expect(service.progress, isNull);
+      });
+
+      test('playback progress fraction is clamped to its valid range', () {
+        const progress = ExternalPlayerPlaybackProgress(
+          position: Duration(minutes: 25),
+          duration: Duration(minutes: 20),
+        );
+
+        expect(progress.fraction, 1.0);
+      });
+    },
+    skip: !Platform.isLinux,
+  );
 }
