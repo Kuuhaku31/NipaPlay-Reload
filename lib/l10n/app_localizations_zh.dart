@@ -27,6 +27,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get tabAccount => '个人中心';
 
   @override
+  String get tabDanmakuConsole => '弹幕控制台';
+
+  @override
   String get tabSettings => '设置';
 
   @override
@@ -1769,6 +1772,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get tabAccount => '個人中心';
+
+  @override
+  String get tabDanmakuConsole => '彈幕控制台';
 
   @override
   String get tabSettings => '設定';

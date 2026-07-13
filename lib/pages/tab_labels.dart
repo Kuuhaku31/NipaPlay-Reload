@@ -49,6 +49,14 @@ List<Widget> createTabLabels(BuildContext context,
     ),
   );
 
+  // 动态插入弹幕控制台 Tab
+  tabs.add(
+    Padding(
+      padding: EdgeInsets.symmetric(horizontal: 8.0),
+      child: HoverZoomTab(text: context.l10n.tabDanmakuConsole),
+    ),
+  );
+
   return tabs;
 }
 

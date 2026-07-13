@@ -27,6 +27,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tabAccount => 'Account';
 
   @override
+  String get tabDanmakuConsole => 'Danmaku Console';
+
+  @override
   String get tabSettings => 'Settings';
 
   @override

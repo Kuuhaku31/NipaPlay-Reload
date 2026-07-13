@@ -135,6 +135,12 @@ abstract class AppLocalizations {
   /// **'个人中心'**
   String get tabAccount;
 
+  /// No description provided for @tabDanmakuConsole.
+  ///
+  /// In zh, this message translates to:
+  /// **'弹幕控制台'**
+  String get tabDanmakuConsole;
+
   /// No description provided for @tabSettings.
   ///
   /// In zh, this message translates to:

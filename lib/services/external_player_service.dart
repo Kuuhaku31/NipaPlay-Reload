@@ -5,10 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
 import 'package:nipaplay/models/media_server_playback.dart';
+import 'package:nipaplay/models/external_player_session.dart';
 import 'package:nipaplay/models/playable_item.dart';
 import 'package:nipaplay/player_abstraction/player_factory.dart';
 import 'package:nipaplay/providers/settings_provider.dart';
 import 'package:nipaplay/services/security_bookmark_service.dart';
+import 'package:nipaplay/services/external_player_console_service.dart';
 import 'package:nipaplay/src/rust/api/dfm_plus.dart' as rust_dfm;
 import 'package:nipaplay/src/rust/rust_init.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/blur_snackbar.dart';
@@ -39,6 +41,14 @@ class DanmakuLaunchAssets {
   final String luaPath;
 
   const DanmakuLaunchAssets({required this.assPath, required this.luaPath});
+}
+
+/// 外部播放器启动结果。主窗口控制台仅在取得实际 PID 时建立会话。
+class ExternalPlayerLaunchResult {
+  const ExternalPlayerLaunchResult({required this.started, this.processId});
+
+  final bool started;
+  final int? processId;
 }
 
 class ExternalPlayerService {
@@ -271,12 +281,35 @@ class ExternalPlayerService {
 
     debugPrint('[ExtPlayer] 调用 launch: path="$playerPath", '
         'media="$mediaPath", extraArgs=$extraArgs');
-    final launched = await launch(
+
+    // 当前设计只保留一个外部播放器会话, 启动新播放器前关闭旧会话
+    if (Platform.isLinux &&
+        ExternalPlayerConsoleService.instance.hasActiveSession) {
+      await ExternalPlayerConsoleService.instance.closePlayerAndConsole();
+    }
+
+    final launchResult = await launchWithResult(
       playerPath: playerPath,
       mediaPath: mediaPath,
       extraArgs: extraArgs,
     );
+    final launched = launchResult.started;
     debugPrint('[ExtPlayer] launch 返回: $launched');
+
+    // Linux 平台成功启动且有 PID 时，更新主窗口内的唯一控制台会话。
+    if (launched && Platform.isLinux && launchResult.processId != null) {
+      final history = item.historyItem;
+      await ExternalPlayerConsoleService.instance.showSession(
+        ExternalPlayerSession(
+          playerPath: playerPath,
+          mediaPath: mediaPath,
+          processId: launchResult.processId!,
+          animeTitle: history?.animeName ?? item.title,
+          episodeTitle: history?.episodeTitle ?? item.subtitle,
+          episodeId: item.episodeId,
+        ),
+      );
+    }
 
     if (context.mounted) {
       _safeSnack(
@@ -590,18 +623,31 @@ end)
     required String mediaPath,
     List<String> extraArgs = const [],
   }) async {
+    final result = await launchWithResult(
+      playerPath: playerPath,
+      mediaPath: mediaPath,
+      extraArgs: extraArgs,
+    );
+    return result.started;
+  }
+
+  static Future<ExternalPlayerLaunchResult> launchWithResult({
+    required String playerPath,
+    required String mediaPath,
+    List<String> extraArgs = const [],
+  }) async {
     debugPrint('[ExtPlayer] launch: playerPath="$playerPath", '
         'mediaPath="$mediaPath", extraArgs=$extraArgs');
     if (!isSupportedPlatform) {
       debugPrint('[ExtPlayer] launch: 平台不支持');
-      return false;
+      return const ExternalPlayerLaunchResult(started: false);
     }
 
     final resolvedPath = await _resolvePlayerPath(playerPath.trim());
     debugPrint('[ExtPlayer] launch: resolvedPath="$resolvedPath"');
     if (resolvedPath == null || resolvedPath.isEmpty) {
       debugPrint('[ExtPlayer] launch: resolvedPath 为空，中止');
-      return false;
+      return const ExternalPlayerLaunchResult(started: false);
     }
 
     final exists = await FileSystemEntity.type(resolvedPath) !=
@@ -609,7 +655,7 @@ end)
     debugPrint('[ExtPlayer] launch: 文件存在=$exists ($resolvedPath)');
     if (!exists) {
       debugPrint('[ExtPlayer] launch: 外部播放器不存在: $resolvedPath');
-      return false;
+      return const ExternalPlayerLaunchResult(started: false);
     }
 
     try {
@@ -642,7 +688,7 @@ end)
           );
           debugPrint('[ExtPlayer] launch: 已派生 pid=${proc.pid}');
         }
-        return true;
+        return const ExternalPlayerLaunchResult(started: true);
       }
 
       if (Platform.isMacOS) {
@@ -653,11 +699,13 @@ end)
           debugPrint('[ExtPlayer] launch: macOS 直启 + extraArgs=$extraArgs');
           await Process.start(resolvedPath, [mediaPath, ...extraArgs]);
         }
-        return true;
+        return const ExternalPlayerLaunchResult(started: true);
       }
 
       // Linux
-      debugPrint('[ExtPlayer] launch: Linux 直启 + extraArgs=$extraArgs, mode=detached',);
+      debugPrint(
+        '[ExtPlayer] launch: Linux 直启 + extraArgs=$extraArgs, mode=detached',
+      );
 
       // 外部播放器改为独立进程
       final proc = await Process.start(
@@ -669,11 +717,11 @@ end)
       // 打印派生进程 PID，方便调试
       debugPrint('[ExtPlayer] launch: 已派生 pid=${proc.pid}');
 
-      return true;
+      return ExternalPlayerLaunchResult(started: true, processId: proc.pid);
     } catch (e, st) {
       debugPrint('[ExtPlayer] launch: 启动异常: $e');
       debugPrintStack(stackTrace: st);
-      return false;
+      return const ExternalPlayerLaunchResult(started: false);
     }
   }
 

@@ -98,6 +98,7 @@ import 'pages/webdav_browser_page.dart';
 import 'package:nipaplay/models/anime_detail_display_mode.dart';
 import 'package:nipaplay/models/background_image_render_mode.dart';
 import 'package:nipaplay/pages/desktop_pip_window_app.dart';
+import 'package:nipaplay/pages/external_player_console_page.dart';
 import 'package:nipaplay/services/desktop_pip_window_service.dart';
 import 'constants/settings_keys.dart';
 import 'player_abstraction/media_kit_player_adapter.dart';
@@ -821,6 +822,12 @@ class _NipaPlayAppState extends State<NipaPlayApp> with WidgetsBindingObserver {
             : showDownloader
                 ? 4
                 : 3;
+
+        // 弹幕控制台索引，始终在最后
+        int danmakuConsoleIdx = 6;
+        if (showWebDAV) danmakuConsoleIdx++;
+        if (showDownloader) danmakuConsoleIdx++;
+
         final l10n = AppLocalizations.of(ctx);
         final items = <NavigationItem>[
           NavigationItem(
@@ -852,6 +859,13 @@ class _NipaPlayAppState extends State<NipaPlayApp> with WidgetsBindingObserver {
           label: l10n?.tabAccount ?? '个人中心',
           onSelected: () => _navigateToPage(ctx, accountIdx),
         ));
+
+        // 添加弹幕控制台导航项
+        items.add(NavigationItem(
+          label: l10n?.tabDanmakuConsole ?? '弹幕控制台',
+          onSelected: () => _navigateToPage(ctx, danmakuConsoleIdx),
+        ));
+
         return items;
       },
       onUploadVideo: () {
@@ -1119,6 +1133,7 @@ class MainPageState extends State<MainPage>
     AnimePage(),
     TorrentDownloadPage(),
     AccountPage(),
+    ExternalPlayerConsolePage(),
   ];
   List<Widget> _pages = [];
   bool _showWebDAVTab = false;
