@@ -31,10 +31,12 @@ class ExternalPlayerPlaybackProgress {
   const ExternalPlayerPlaybackProgress({
     required this.position,
     required this.duration,
+    this.isPaused = false,
   });
 
   final Duration position; // 当前播放位置
   final Duration duration; // 媒体总时长
+  final bool isPaused;     // 播放器是否暂停
 
   /// 计算播放进度百分比, 范围为 0.0 ~ 1.0, 如果总时长 <= 0, 则返回 null
   double? get fraction {

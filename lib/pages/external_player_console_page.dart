@@ -24,6 +24,7 @@ class ExternalPlayerConsolePage extends StatelessWidget {
                     : _ConsoleCard(
                         session: session,
                         progress: service.progress,
+                        isPaused: service.isPaused,
                       ),
               ),
             ),
@@ -67,10 +68,15 @@ class _EmptyConsole extends StatelessWidget {
 }
 
 class _ConsoleCard extends StatelessWidget {
-  const _ConsoleCard({required this.session, required this.progress});
+  const _ConsoleCard({
+    required this.session,
+    required this.progress,
+    required this.isPaused,
+  });
 
   final ExternalPlayerSession session;
   final ExternalPlayerPlaybackProgress? progress;
+  final bool isPaused;
 
   @override
   Widget build(BuildContext context) {
@@ -105,11 +111,24 @@ class _ConsoleCard extends StatelessWidget {
             const SizedBox(height: 20),
             Align(
               alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed:
-                    ExternalPlayerConsoleService.instance.closePlayerAndConsole,
-                icon: const Icon(Icons.close),
-                label: const Text('关闭播放器'),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  FilledButton.tonalIcon(
+                    onPressed: session.ipcPath == null
+                        ? null
+                        : ExternalPlayerConsoleService.instance.togglePause,
+                    icon: Icon(isPaused ? Icons.play_arrow : Icons.pause),
+                    label: Text(isPaused ? '继续播放' : '暂停'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: ExternalPlayerConsoleService
+                        .instance.closePlayerAndConsole,
+                    icon: const Icon(Icons.close),
+                    label: const Text('关闭播放器'),
+                  ),
+                ],
               ),
             ),
           ],

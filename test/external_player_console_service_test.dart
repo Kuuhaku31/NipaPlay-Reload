@@ -55,6 +55,7 @@ void main() {
           monitorInterval: const Duration(days: 1),
         );
         addTearDown(() async {
+          await service.closePlayerAndConsole();
           service.dispose();
           await _stopProcess(firstProcess);
           await _stopProcess(secondProcess);
@@ -74,6 +75,7 @@ void main() {
           monitorInterval: const Duration(days: 1),
         );
         addTearDown(() async {
+          await service.closePlayerAndConsole();
           service.dispose();
           await _stopProcess(process);
         });
@@ -93,6 +95,7 @@ void main() {
           monitorInterval: const Duration(milliseconds: 10),
         );
         addTearDown(() async {
+          await service.closePlayerAndConsole();
           service.dispose();
           await _stopProcess(process);
         });
@@ -121,7 +124,11 @@ void main() {
             final request = jsonDecode(line) as Map<String, dynamic>;
             final requestId = request['request_id'];
             client.writeln(jsonEncode({
-              'data': requestId == 1 ? 75.5 : 1500.0,
+              'data': requestId == 1
+                  ? 75.5
+                  : requestId == 2
+                      ? 1500.0
+                      : false,
               'error': 'success',
               'request_id': requestId,
             }));
@@ -131,6 +138,7 @@ void main() {
           monitorInterval: const Duration(milliseconds: 10),
         );
         addTearDown(() async {
+          await service.closePlayerAndConsole();
           service.dispose();
           await server.close();
           await _stopProcess(process);
@@ -146,6 +154,54 @@ void main() {
         );
         expect(service.progress?.duration, const Duration(minutes: 25));
         expect(service.progress?.fraction, closeTo(0.0503, 0.0001));
+        expect(service.isPaused, isFalse);
+      });
+
+      test('toggles mpv pause state through JSON IPC', () async {
+        final process = await _startPlayer();
+        final tempDir =
+            await Directory.systemTemp.createTemp('nipaplay_ipc_test_');
+        final socketPath = '${tempDir.path}/mpv.sock';
+        final commands = <bool>[];
+        final server = await ServerSocket.bind(
+          InternetAddress(socketPath, type: InternetAddressType.unix),
+          0,
+        );
+        server.listen((client) {
+          client
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .listen((line) {
+            final request = jsonDecode(line) as Map<String, dynamic>;
+            final command = request['command'] as List<dynamic>;
+            if (command.first == 'set_property' && command[1] == 'pause') {
+              commands.add(command[2] as bool);
+            }
+            client.writeln(jsonEncode({
+              'data': null,
+              'error': 'success',
+              'request_id': request['request_id'],
+            }));
+          });
+        });
+        final service = ExternalPlayerConsoleService(
+          monitorInterval: const Duration(days: 1),
+        );
+        addTearDown(() async {
+          await service.closePlayerAndConsole();
+          service.dispose();
+          await server.close();
+          await _stopProcess(process);
+          await tempDir.delete(recursive: true);
+        });
+        await service.showSession(_session(process, ipcPath: socketPath));
+
+        await service.togglePause();
+        await service.togglePause();
+
+        expect(commands, <bool>[true, false]);
+        expect(service.isPaused, isFalse);
       });
 
       test('replacing a session clears the previous progress', () async {
@@ -167,7 +223,11 @@ void main() {
             final request = jsonDecode(line) as Map<String, dynamic>;
             final requestId = request['request_id'];
             client.writeln(jsonEncode({
-              'data': requestId == 1 ? 60.0 : 1200.0,
+              'data': requestId == 1
+                  ? 60.0
+                  : requestId == 2
+                      ? 1200.0
+                      : false,
               'error': 'success',
               'request_id': requestId,
             }));
@@ -177,6 +237,7 @@ void main() {
           monitorInterval: const Duration(milliseconds: 10),
         );
         addTearDown(() async {
+          await service.closePlayerAndConsole();
           service.dispose();
           await server.close();
           await _stopProcess(firstProcess);
