@@ -29,6 +29,7 @@ class SettingsProvider with ChangeNotifier {
   bool _useExternalPlayer = false;
   String _externalPlayerPath = '';
   bool _externalPlayerDanmakuOverlay = true; // 弹幕外挂默认开启
+  bool _externalPlayerConsole = false;       // 默认关闭外部播放器控制台
 
   // GitHub 代理设置
   String _githubProxyUrl = '';
@@ -48,6 +49,7 @@ class SettingsProvider with ChangeNotifier {
   bool get useExternalPlayer => _useExternalPlayer;
   String get externalPlayerPath => _externalPlayerPath;
   bool get externalPlayerDanmakuOverlay => _externalPlayerDanmakuOverlay;
+  bool get externalPlayerConsole => _externalPlayerConsole;
   String get githubProxyUrl => _githubProxyUrl;
   double get danmakuSupersample => _danmakuSupersample;
 
@@ -64,7 +66,8 @@ class SettingsProvider with ChangeNotifier {
     if (savedDanmakuConvert != null) {
       _danmakuConvertToSimplified = savedDanmakuConvert;
     } else {
-      final languageMode = _prefs.getString(SettingsKeys.appLanguageMode) ?? 'auto';
+      final languageMode =
+          _prefs.getString(SettingsKeys.appLanguageMode) ?? 'auto';
       if (languageMode == 'auto') {
         final systemLocale = WidgetsBinding.instance.platformDispatcher.locale;
         _danmakuConvertToSimplified =
@@ -73,9 +76,9 @@ class SettingsProvider with ChangeNotifier {
         _danmakuConvertToSimplified = true;
       }
     }
-    _autoMatchDanmakuFirstSearchResultOnHashFail =
-        _prefs.getBool(SettingsKeys.autoMatchDanmakuFirstSearchResultOnHashFail) ??
-            true;
+    _autoMatchDanmakuFirstSearchResultOnHashFail = _prefs.getBool(
+            SettingsKeys.autoMatchDanmakuFirstSearchResultOnHashFail) ??
+        true;
     final savedAutoMatchDanmakuOnPlay =
         _prefs.getBool(SettingsKeys.autoMatchDanmakuOnPlay);
     _autoMatchDanmakuOnPlay = savedAutoMatchDanmakuOnPlay ?? true;
@@ -95,11 +98,14 @@ class SettingsProvider with ChangeNotifier {
         _prefs.getString(SettingsKeys.externalPlayerPath) ?? '';
     _externalPlayerDanmakuOverlay =
         _prefs.getBool(SettingsKeys.externalPlayerDanmakuOverlay) ?? true;
-    _githubProxyUrl =
-        _prefs.getString(SettingsKeys.githubProxyUrl) ?? '';
+    _externalPlayerConsole =
+        _prefs.getBool(SettingsKeys.externalPlayerConsole) ?? false;
+    _githubProxyUrl = _prefs.getString(SettingsKeys.githubProxyUrl) ?? '';
     // 弹幕超采样：默认对平板和低 DPR 桌面设备开启 2x
     final defaultSupersample =
-        globals.isTablet || (globals.isDesktop && _defaultDprBelow2()) ? 2.0 : 0.0;
+        globals.isTablet || (globals.isDesktop && _defaultDprBelow2())
+            ? 2.0
+            : 0.0;
     _danmakuSupersample =
         _prefs.getDouble(SettingsKeys.danmakuSupersample) ?? defaultSupersample;
     notifyListeners();
@@ -110,8 +116,8 @@ class SettingsProvider with ChangeNotifier {
   /// 判断当前设备默认 DPR 是否低于 2.0
   static bool _defaultDprBelow2() {
     try {
-      final dpr = WidgetsBinding.instance.platformDispatcher.views.first
-          .devicePixelRatio;
+      final dpr = WidgetsBinding
+          .instance.platformDispatcher.views.first.devicePixelRatio;
       return dpr < 2.0;
     } catch (_) {
       return false;
@@ -213,6 +219,13 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setExternalPlayerConsole(bool enable) async {
+    if (_externalPlayerConsole == enable) return;
+    _externalPlayerConsole = enable;
+    await _prefs.setBool(SettingsKeys.externalPlayerConsole, enable);
+    notifyListeners();
+  }
+
   Future<void> setGithubProxyUrl(String url) async {
     _githubProxyUrl = url.trim();
     await _prefs.setString(
@@ -227,5 +240,4 @@ class SettingsProvider with ChangeNotifier {
     await _prefs.setDouble(SettingsKeys.danmakuSupersample, value);
     notifyListeners();
   }
-
 }

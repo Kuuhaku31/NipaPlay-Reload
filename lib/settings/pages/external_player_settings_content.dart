@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:flutter/material.dart';
 import 'package:kmbal_ionicons/kmbal_ionicons.dart';
@@ -11,6 +13,29 @@ import 'package:provider/provider.dart';
 
 class ExternalPlayerSettingsContent extends StatelessWidget {
   const ExternalPlayerSettingsContent({super.key});
+
+  /// 构建外部播放器设置页面的内容
+  static Consumer<SettingsProvider> linuxExternalPlayerConsoleConsumer = Consumer<SettingsProvider>(
+    builder: (context, settingsProvider, child) {
+
+      String titleTextSimple         = '外部播放器控制台 (绝赞开发中)';
+      String titleTextTraditional    = '外部播放器控制台';
+      String titleTextEnglish        = 'External Player Console';
+      String subtitleTextSimple      = '启动外部播放器时打开独立窗口，显示番剧、剧集、episodeId 和 PID';
+      String subtitleTextTraditional = '啟動外部播放器時開啟獨立視窗，顯示番劇、劇集、episodeId 和 PID';
+      String subtitleTextEnglish     = 'Open a separate window showing the title, episode, episodeId and PID.';
+
+      return AdaptiveSettingsTile<bool>.toggle(
+        title     : _text(context, titleTextSimple,    titleTextTraditional,    titleTextEnglish   ),
+        subtitle  : _text(context, subtitleTextSimple, subtitleTextTraditional, subtitleTextEnglish),
+        icon      : Ionicons.terminal_outline,
+        phoneIcon : cupertino.CupertinoIcons.rectangle_on_rectangle,
+        enabled   : globals.isDesktop,
+        value     : settingsProvider.externalPlayerConsole,
+        onChanged : settingsProvider.setExternalPlayerConsole,
+      );
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +66,10 @@ class ExternalPlayerSettingsContent extends StatelessWidget {
                 );
               },
             ),
+
+            // 仅在 Linux 平台上显示外部播放器控制台开关
+            if (Platform.isLinux) linuxExternalPlayerConsoleConsumer,
+
             Consumer<SettingsProvider>(
               builder: (context, settingsProvider, child) {
                 final path = settingsProvider.externalPlayerPath.trim();
@@ -183,7 +212,7 @@ class ExternalPlayerSettingsContent extends StatelessWidget {
     );
   }
 
-  String _text(
+  static String _text(
     BuildContext context,
     String simplified,
     String traditional,

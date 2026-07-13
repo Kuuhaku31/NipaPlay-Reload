@@ -98,6 +98,8 @@ import 'pages/webdav_browser_page.dart';
 import 'package:nipaplay/models/anime_detail_display_mode.dart';
 import 'package:nipaplay/models/background_image_render_mode.dart';
 import 'package:nipaplay/pages/desktop_pip_window_app.dart';
+import 'package:nipaplay/pages/external_player_console_app.dart';  // 引入外部播放器控制台应用的入口
+import 'package:nipaplay/models/external_player_session.dart';     // 引入外部播放器会话模型
 import 'package:nipaplay/services/desktop_pip_window_service.dart';
 import 'constants/settings_keys.dart';
 import 'player_abstraction/media_kit_player_adapter.dart';
@@ -175,9 +177,17 @@ void main(List<String> args) async {
   });
 
   final pipLaunchPayload = DesktopPipWindowService.tryParseLaunchPayload(args);
+  final externalPlayerSession = ExternalPlayerSession.tryParseLaunchArguments(args);
   final bool isSubWindowProcess =
       args.isNotEmpty && args.first == 'multi_window';
   if (isSubWindowProcess) {
+
+    // 如果是 Linux 平台并且存在外部播放器会话, 则运行外部播放器控制台应用
+    if (Platform.isLinux && externalPlayerSession != null) {
+      await runExternalPlayerConsoleApp(externalPlayerSession);
+      return;
+    }
+
     if (DesktopPipWindowService.isFeatureEnabled &&
         pipLaunchPayload != null &&
         pipLaunchPayload.isPipWindow) {

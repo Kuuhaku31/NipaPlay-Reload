@@ -21,6 +21,9 @@ class SettingsKeys {
   static const String externalPlayerDanmakuOverlay =
       'external_player_danmaku_overlay';
 
+  /// Linux 启动外部播放器时显示独立会话控制台。
+  static const String externalPlayerConsole = 'external_player_console';
+
   /// 自定义播放器请求视频的 User-Agent（空字符串 = 用内核默认 UA）。
   static const String customPlayerUA = 'custom_player_ua';
 
