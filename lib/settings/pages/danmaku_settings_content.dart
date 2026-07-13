@@ -802,6 +802,28 @@ class _DanmakuSettingsContentState extends State<DanmakuSettingsContent> {
               Divider(
                   color: colorScheme.onSurface.withValues(alpha: 0.12),
                   height: 1),
+
+            // 弹幕透明度滑块
+            Consumer<VideoPlayerState>(
+              builder: (context, videoState, child) {
+                return AdaptiveSettingsTile.slider(
+                  title: context.l10n.danmakuOpacityTitle,
+                  subtitle: context.l10n.danmakuOpacitySubtitle,
+                  icon: Icons.opacity,
+                  value: videoState.danmakuOpacity,
+                  min: 0,
+                  max: 1,
+                  divisions: 100,
+                  onChanged: videoState.setDanmakuOpacity,
+                  labelFormatter: (value) => '${(value * 100).round()}%',
+                );
+              },
+            ),
+
+            Divider(
+                color: colorScheme.onSurface.withValues(alpha: 0.12),
+                height: 1),
+
             Consumer<VideoPlayerState>(
               builder: (context, videoState, child) {
                 return AdaptiveSettingsTile.toggle(

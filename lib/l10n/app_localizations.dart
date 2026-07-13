@@ -219,6 +219,18 @@ abstract class AppLocalizations {
   /// **'正在获取播放进度…'**
   String get externalPlayerConsoleProgressLoading;
 
+  /// No description provided for @danmakuOpacityTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'弹幕不透明度'**
+  String get danmakuOpacityTitle;
+
+  /// No description provided for @danmakuOpacitySubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'调整弹幕文字不透明度，新打开的视频将应用此设置。'**
+  String get danmakuOpacitySubtitle;
+
   /// No description provided for @externalPlayerConsoleResume.
   ///
   /// In zh, this message translates to:

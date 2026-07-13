@@ -20,6 +20,8 @@
   "externalPlayerConsoleProgress": "Playback progress",
   "externalPlayerConsoleProgressUnsupported": "This player does not support progress synchronization.",
   "externalPlayerConsoleProgressLoading": "Reading playback progress…",
+  "danmakuOpacityTitle": "Danmaku opacity",
+  "danmakuOpacitySubtitle": "Adjust danmaku text opacity. Newly opened videos will use this setting.",
   "externalPlayerConsoleResume": "Resume",
   "externalPlayerConsolePause": "Pause",
   "externalPlayerConsoleClose": "Close Player",
