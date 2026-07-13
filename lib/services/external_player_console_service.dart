@@ -1,6 +1,3 @@
-
-// external_player_console_service.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -8,87 +5,81 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:nipaplay/models/external_player_session.dart';
 
-
-/// 管理外部播放器弹幕控制台
+/// Owns the single Linux external-player session displayed by the app.
 class ExternalPlayerConsoleService extends ChangeNotifier {
-
   ExternalPlayerConsoleService({
-    Duration monitorInterval = const Duration(seconds: 1), // 每秒轮询一次播放器状态
-  }) :
-  _monitorInterval  = monitorInterval;
+    Duration monitorInterval = const Duration(seconds: 1),
+  }) : _monitorInterval = monitorInterval;
 
-  // 单例实例
-  static final ExternalPlayerConsoleService instance = ExternalPlayerConsoleService();
+  static final ExternalPlayerConsoleService instance =
+      ExternalPlayerConsoleService();
 
+  static bool get isSupportedPlatform => !kIsWeb && Platform.isLinux;
 
-  // 状态
-  ExternalPlayerSession?          _session;  // 当前外部播放器会话
-  ExternalPlayerPlaybackProgress? _progress; // 当前播放进度
+  final Duration _monitorInterval;
 
-  final Duration _monitorInterval;  // 轮询间隔
-  Timer? _monitorTimer;             // 轮询播放器状态的定时器
-  bool  _isClosing         = false; // 是否正在关闭播放器
-  bool  _isCheckingProcess = false; // 是否正在检查播放器进程状态
-  bool  _isPaused          = false; // 播放器是否暂停
-  bool  _isSendingPauseCommand = false; // 是否正在发送暂停命令
+  ExternalPlayerSession? _session;
+  ExternalPlayerPlaybackProgress? _progress;
+  Timer? _monitorTimer;
+  bool _isClosing = false;
+  bool _isCheckingProcess = false;
+  bool _isPaused = false;
+  bool _isSendingPauseCommand = false;
 
-  // --- Getters ---
-  ExternalPlayerSession?          get session          => _session;         // 当前外部播放器会话
-  ExternalPlayerPlaybackProgress? get progress         => _progress;        // 当前播放进度
-  bool                            get hasActiveSession => _session != null; // 是否有活动的外部播放器会话
-  bool                            get isClosing        => _isClosing;       // 是否正在关闭播放器
-  bool                            get isPaused         => _isPaused;        // 播放器是否暂停
+  ExternalPlayerSession? get session => _session;
+  ExternalPlayerPlaybackProgress? get progress => _progress;
+  bool get hasActiveSession => _session != null;
+  bool get isClosing => _isClosing;
+  bool get isPaused => _isPaused;
+  bool get isSendingPauseCommand => _isSendingPauseCommand;
 
-
-  /// 把一个新的外部播放器会话设置为当前唯一会话, 并启动播放器状态与进度监控,
-  /// 若已有会话, 先关闭旧播放器, 再用新会话替换控制台内容
-  Future<void> showSession(ExternalPlayerSession session) async {
-
-    // 如果已有会话, 且进程 ID 不同, 先关闭旧播放器
+  /// Replaces the active session and terminates the previously tracked player.
+  void showSession(ExternalPlayerSession session) {
     final previous = _session;
     if (previous != null && previous.processId != session.processId) {
       _terminate(previous.processId);
     }
 
-    // 重置状态, 刷新 UI
     _monitorTimer?.cancel();
-    _session   = session;
-    _progress  = null;
+    _session = session;
+    _progress = null;
     _isClosing = false;
-    _isPaused  = false;
+    _isPaused = false;
     notifyListeners();
 
-    // 启动轮询器
-    _monitorTimer = Timer.periodic(_monitorInterval, (_) => unawaited(_refreshProcessState()));
+    _monitorTimer = Timer.periodic(
+      _monitorInterval,
+      (_) => unawaited(_refreshProcessState()),
+    );
   }
 
-  /// 关闭当前播放器并收起主程序内的控制台面板。
-  Future<void> closePlayerAndConsole() async {
-
-    // 如果正在关闭, 或者没有会话, 则直接返回
+  /// Hides the console session immediately and asks the player to terminate.
+  void closePlayerAndConsole() {
     final current = _session;
     if (_isClosing || current == null) return;
 
-    // 重置状态, 刷新 UI
     _isClosing = true;
     _monitorTimer?.cancel();
     _monitorTimer = null;
-    _session      = null;
-    _progress     = null;
-    _isPaused     = false;
+    _session = null;
+    _progress = null;
+    _isPaused = false;
     notifyListeners();
 
-    // 终止播放器进程
-    try { _terminate(current.processId); }
-    finally { _isClosing = false; }
+    try {
+      _terminate(current.processId);
+    } finally {
+      _isClosing = false;
+    }
   }
 
-  /// 暂停或继续播放当前 mpv 会话
+  /// Toggles pause for an mpv session through its JSON IPC socket.
   Future<void> togglePause() async {
     final current = _session;
     if (current?.ipcPath == null || _isSendingPauseCommand) return;
 
     _isSendingPauseCommand = true;
+    notifyListeners();
     try {
       final targetPaused = !_isPaused;
       final changed = await _setMpvPaused(current!, targetPaused);
@@ -103,79 +94,73 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
           isPaused: targetPaused,
         );
       }
-      notifyListeners();
     } finally {
       _isSendingPauseCommand = false;
+      notifyListeners();
     }
   }
 
-  /// 检查播放器是否仍在运行,
-  /// 播放器自行退出后自动收起控制台
   Future<void> _refreshProcessState() async {
-
-    // 如果没有会话, 或者正在关闭播放器, 或者正在检查进程状态, 则直接返回
     final current = _session;
     if (current == null || _isClosing || _isCheckingProcess) return;
-    _isCheckingProcess = true; // 标记正在检查进程状态, 避免重复调用
+    _isCheckingProcess = true;
 
-    // 检查播放器进程是否仍在运行, 并更新播放进度
     try {
-
-      // 检查播放器进程是否仍在运行
       final running = await _isLinuxProcessRunning(current.processId);
-      if (!identical(_session, current)) return; // 如果会话已被替换, 则直接返回
+      if (!identical(_session, current)) return;
 
-      // 如果播放器仍在运行, 则尝试读取播放进度, 并更新状态
-      if (running) {
-
-        // 如果会话已被替换, 或者读取播放进度失败, 则直接返回
-        final nextProgress = await _readMpvProgress(current);
-        if (!identical(_session, current) || nextProgress == null) return;
-
-        // 如果播放进度没有变化, 则不刷新 UI
-        final previous = _progress;
-        if (previous?.position == nextProgress.position &&
-            previous?.duration == nextProgress.duration &&
-            previous?.isPaused == nextProgress.isPaused) {
-          return;
-        }
-
-        // 更新播放进度, 刷新 UI
-        _progress = nextProgress;
-        _isPaused = nextProgress.isPaused;
-        notifyListeners();
+      if (!running) {
+        _clearSession();
+        return;
       }
 
-      // 播放器已退出, 则收起控制台
-      else {
-        _monitorTimer?.cancel();
-        _monitorTimer = null;
-        _session      = null;
-        _progress     = null;
-        _isPaused     = false;
-        notifyListeners();
+      final nextProgress = await _readMpvProgress(current);
+      if (!identical(_session, current) || nextProgress == null) return;
+
+      final previous = _progress;
+      if (previous?.position == nextProgress.position &&
+          previous?.duration == nextProgress.duration &&
+          previous?.isPaused == nextProgress.isPaused) {
+        return;
       }
 
+      _progress = nextProgress;
+      _isPaused = nextProgress.isPaused;
+      notifyListeners();
+    } catch (error) {
+      debugPrint('[ExtPlayerConsole] Failed to refresh player state: $error');
+    } finally {
+      _isCheckingProcess = false;
     }
-    catch (e) { debugPrint('[ExtPlayerConsole] 刷新播放器状态失败: $e'); }
-    finally   { _isCheckingProcess = false; }
   }
 
-  /// 终止播放器进程
+  void _clearSession() {
+    _monitorTimer?.cancel();
+    _monitorTimer = null;
+    _session = null;
+    _progress = null;
+    _isPaused = false;
+    notifyListeners();
+  }
+
   void _terminate(int processId) {
     try {
       final killed = Process.killPid(processId, ProcessSignal.sigterm);
-      if (!killed) debugPrint('[ExtPlayerConsole] 播放器进程终止失败: pid=$processId');
+      if (!killed) {
+        debugPrint(
+          '[ExtPlayerConsole] Failed to terminate player: pid=$processId',
+        );
+      }
+    } catch (error) {
+      debugPrint('[ExtPlayerConsole] Failed to close player: $error');
     }
-    catch (e) { debugPrint('[ExtPlayerConsole] 关闭播放器失败: $e'); }
   }
 
-  /// 检查 Linux 系统下的进程是否仍在运行
   static Future<bool> _isLinuxProcessRunning(int processId) async {
     if (processId <= 0) return false;
-    final stat = File('/proc/$processId/stat');
+
     try {
-      final value = await stat.readAsString();
+      final value = await File('/proc/$processId/stat').readAsString();
       final closingParen = value.lastIndexOf(')');
       if (closingParen < 0 || closingParen + 2 >= value.length) return true;
       return value.substring(closingParen + 2, closingParen + 3) != 'Z';
@@ -184,10 +169,9 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
     }
   }
 
-  /// 通过 mpv JSON IPC 查询当前播放位置和媒体总时长。
-  static Future<ExternalPlayerPlaybackProgress?>
-  _readMpvProgress(ExternalPlayerSession session) async {
-
+  static Future<ExternalPlayerPlaybackProgress?> _readMpvProgress(
+    ExternalPlayerSession session,
+  ) async {
     final ipcPath = session.ipcPath;
     if (ipcPath == null || ipcPath.isEmpty) return null;
 
@@ -199,17 +183,17 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
         timeout: const Duration(milliseconds: 500),
       );
       socket.write('${jsonEncode({
-        'command': ['get_property', 'time-pos'],
-        'request_id': 1,
-      })}\n');
+            'command': ['get_property', 'time-pos'],
+            'request_id': 1,
+          })}\n');
       socket.write('${jsonEncode({
-        'command': ['get_property', 'duration'],
-        'request_id': 2,
-      })}\n');
+            'command': ['get_property', 'duration'],
+            'request_id': 2,
+          })}\n');
       socket.write('${jsonEncode({
-        'command': ['get_property', 'pause'],
-        'request_id': 3,
-      })}\n');
+            'command': ['get_property', 'pause'],
+            'request_id': 3,
+          })}\n');
       await socket.flush();
 
       double? positionSeconds;
@@ -225,28 +209,41 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
         if (value is! Map<String, dynamic> || value['error'] != 'success') {
           continue;
         }
+
         final data = value['data'];
-        if (value['request_id'] == 1 && data is num) positionSeconds = data.toDouble();
-        if (value['request_id'] == 2 && data is num) durationSeconds = data.toDouble();
-        if (value['request_id'] == 3 && data is bool) isPaused = data;
-        if (positionSeconds != null && durationSeconds != null && isPaused != null) break;
+        switch (value['request_id']) {
+          case 1 when data is num:
+            positionSeconds = data.toDouble();
+          case 2 when data is num:
+            durationSeconds = data.toDouble();
+          case 3 when data is bool:
+            isPaused = data;
+        }
+        if (positionSeconds != null &&
+            durationSeconds != null &&
+            isPaused != null) {
+          break;
+        }
       }
 
-      if (positionSeconds == null || durationSeconds == null || isPaused == null) return null;
+      if (positionSeconds == null ||
+          durationSeconds == null ||
+          isPaused == null) {
+        return null;
+      }
       return ExternalPlayerPlaybackProgress(
         position: Duration(milliseconds: (positionSeconds * 1000).round()),
         duration: Duration(milliseconds: (durationSeconds * 1000).round()),
         isPaused: isPaused,
       );
     } catch (_) {
-      // mpv 启动初期 Socket 可能尚未建立，等待下一次轮询即可。
+      // mpv may not have created its socket yet; the next poll will retry.
       return null;
     } finally {
       socket?.destroy();
     }
   }
 
-  /// 通过 mpv JSON IPC 设置暂停状态
   static Future<bool> _setMpvPaused(
     ExternalPlayerSession session,
     bool paused,
@@ -262,9 +259,9 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
         timeout: const Duration(milliseconds: 500),
       );
       socket.write('${jsonEncode({
-        'command': ['set_property', 'pause', paused],
-        'request_id': 4,
-      })}\n');
+            'command': ['set_property', 'pause', paused],
+            'request_id': 4,
+          })}\n');
       await socket.flush();
 
       final lines = socket
@@ -274,7 +271,9 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
           .timeout(const Duration(milliseconds: 800));
       await for (final line in lines) {
         final value = jsonDecode(line);
-        if (value is! Map<String, dynamic> || value['request_id'] != 4) continue;
+        if (value is! Map<String, dynamic> || value['request_id'] != 4) {
+          continue;
+        }
         return value['error'] == 'success';
       }
       return false;
@@ -285,8 +284,6 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
     }
   }
 
-
-  /// 释放资源
   @override
   void dispose() {
     _monitorTimer?.cancel();

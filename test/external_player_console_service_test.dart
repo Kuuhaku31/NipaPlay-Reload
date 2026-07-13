@@ -45,8 +45,28 @@ Future<void> _waitUntil(
 }
 
 void main() {
+  group('ExternalPlayerPlaybackProgress', () {
+    test('clamps its fraction to the valid range', () {
+      const progress = ExternalPlayerPlaybackProgress(
+        position: Duration(minutes: 25),
+        duration: Duration(minutes: 20),
+      );
+
+      expect(progress.fraction, 1.0);
+    });
+
+    test('has no fraction when duration is unavailable', () {
+      const progress = ExternalPlayerPlaybackProgress(
+        position: Duration.zero,
+        duration: Duration.zero,
+      );
+
+      expect(progress.fraction, isNull);
+    });
+  });
+
   group(
-    'ExternalPlayerConsoleService',
+    'ExternalPlayerConsoleService on Linux',
     () {
       test('only keeps the latest external player session', () async {
         final firstProcess = await _startPlayer();
@@ -55,14 +75,14 @@ void main() {
           monitorInterval: const Duration(days: 1),
         );
         addTearDown(() async {
-          await service.closePlayerAndConsole();
+          service.closePlayerAndConsole();
           service.dispose();
           await _stopProcess(firstProcess);
           await _stopProcess(secondProcess);
         });
 
-        await service.showSession(_session(firstProcess));
-        await service.showSession(_session(secondProcess));
+        service.showSession(_session(firstProcess));
+        service.showSession(_session(secondProcess));
 
         expect(service.session?.processId, secondProcess.pid);
         expect(service.progress, isNull);
@@ -75,14 +95,14 @@ void main() {
           monitorInterval: const Duration(days: 1),
         );
         addTearDown(() async {
-          await service.closePlayerAndConsole();
+          service.closePlayerAndConsole();
           service.dispose();
           await _stopProcess(process);
         });
-        await service.showSession(_session(process));
+        service.showSession(_session(process));
 
-        await service.closePlayerAndConsole();
-        await service.closePlayerAndConsole();
+        service.closePlayerAndConsole();
+        service.closePlayerAndConsole();
 
         expect(service.session, isNull);
         expect(service.progress, isNull);
@@ -95,11 +115,11 @@ void main() {
           monitorInterval: const Duration(milliseconds: 10),
         );
         addTearDown(() async {
-          await service.closePlayerAndConsole();
+          service.closePlayerAndConsole();
           service.dispose();
           await _stopProcess(process);
         });
-        await service.showSession(_session(process));
+        service.showSession(_session(process));
 
         await _waitUntil(() => service.session == null);
 
@@ -138,13 +158,13 @@ void main() {
           monitorInterval: const Duration(milliseconds: 10),
         );
         addTearDown(() async {
-          await service.closePlayerAndConsole();
+          service.closePlayerAndConsole();
           service.dispose();
           await server.close();
           await _stopProcess(process);
           await tempDir.delete(recursive: true);
         });
-        await service.showSession(_session(process, ipcPath: socketPath));
+        service.showSession(_session(process, ipcPath: socketPath));
 
         await _waitUntil(() => service.progress != null);
 
@@ -189,13 +209,13 @@ void main() {
           monitorInterval: const Duration(days: 1),
         );
         addTearDown(() async {
-          await service.closePlayerAndConsole();
+          service.closePlayerAndConsole();
           service.dispose();
           await server.close();
           await _stopProcess(process);
           await tempDir.delete(recursive: true);
         });
-        await service.showSession(_session(process, ipcPath: socketPath));
+        service.showSession(_session(process, ipcPath: socketPath));
 
         await service.togglePause();
         await service.togglePause();
@@ -237,31 +257,20 @@ void main() {
           monitorInterval: const Duration(milliseconds: 10),
         );
         addTearDown(() async {
-          await service.closePlayerAndConsole();
+          service.closePlayerAndConsole();
           service.dispose();
           await server.close();
           await _stopProcess(firstProcess);
           await _stopProcess(secondProcess);
           await tempDir.delete(recursive: true);
         });
-        await service.showSession(
-          _session(firstProcess, ipcPath: socketPath),
-        );
+        service.showSession(_session(firstProcess, ipcPath: socketPath));
         await _waitUntil(() => service.progress != null);
 
-        await service.showSession(_session(secondProcess));
+        service.showSession(_session(secondProcess));
 
         expect(service.session?.processId, secondProcess.pid);
         expect(service.progress, isNull);
-      });
-
-      test('playback progress fraction is clamped to its valid range', () {
-        const progress = ExternalPlayerPlaybackProgress(
-          position: Duration(minutes: 25),
-          duration: Duration(minutes: 20),
-        );
-
-        expect(progress.fraction, 1.0);
       });
     },
     skip: !Platform.isLinux,
