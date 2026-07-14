@@ -313,7 +313,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
   // 加载弹幕不透明度
   Future<void> _loadDanmakuOpacity() async {
     final prefs = await SharedPreferences.getInstance();
-    _danmakuOpacity = prefs.getDouble(_danmakuOpacityKey) ?? 1.0;
+    _danmakuOpacity = prefs.getDouble(SettingsKeys.danmakuOpacity) ?? 1.0;
     _notifyListeners();
   }
 
@@ -321,7 +321,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
   Future<void> setDanmakuOpacity(double opacity) async {
     _danmakuOpacity = opacity;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_danmakuOpacityKey, opacity);
+    await prefs.setDouble(SettingsKeys.danmakuOpacity, opacity);
     _syncErikaDanmakuConfig();
     _notifyListeners();
   }
@@ -1502,7 +1502,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
     var loadedFontFamily =
         (prefs.getString(_danmakuFontFamilyKey) ?? '').trim();
     final loadedOutlineStyle = _resolveDanmakuOutlineStyle(
-      prefs.getInt(_danmakuOutlineStyleKey),
+      prefs.getInt(SettingsKeys.danmakuOutlineStyle),
     );
     final loadedShadowStyle = _resolveDanmakuShadowStyle(
       prefs.getInt(_danmakuShadowStyleKey),
@@ -1626,7 +1626,7 @@ extension VideoPlayerStatePreferences on VideoPlayerState {
     _danmakuOutlineStyle = style;
     _next2DanmakuOutlineWidth = sanitizedWidth;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_danmakuOutlineStyleKey, style.index);
+    await prefs.setInt(SettingsKeys.danmakuOutlineStyle, style.index);
     await prefs.setDouble(
       _next2DanmakuOutlineWidthKey,
       sanitizedWidth,

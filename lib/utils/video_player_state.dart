@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:nipaplay/utils/danmaku/style.dart';
 // import 'package:fvp/mdk.dart';  // Commented out
 import '../player_abstraction/player_abstraction.dart'; // <-- NEW IMPORT
 import '../player_abstraction/player_factory.dart';
@@ -115,10 +116,6 @@ enum SubtitleStyleOverrideMode { auto, none, scale, force }
 enum SubtitleAlignX { left, center, right }
 
 enum SubtitleAlignY { top, center, bottom }
-
-enum DanmakuOutlineStyle { none, stroke, uniform }
-
-enum DanmakuShadowStyle { none, soft, medium, strong }
 
 enum PlayerStatus {
   idle, // 空闲状态
@@ -406,7 +403,6 @@ class VideoPlayerState extends ChangeNotifier implements WindowListener {
   PlayerKernelType? _timelinePreviewPlayerKernel;
   String? _timelinePreviewPlayerSource;
   Future<void> _timelinePreviewSerialTask = Future.value();
-  final String _danmakuOpacityKey = 'danmaku_opacity';
   double _danmakuOpacity = 1.0; // 默认透明度
   final String _danmakuVisibleKey = 'danmaku_visible';
   bool _danmakuVisible = true; // 默认显示弹幕
@@ -502,7 +498,6 @@ class VideoPlayerState extends ChangeNotifier implements WindowListener {
   String _danmakuFontFilePath = '';
   final String _danmakuFontFamilyKey = 'danmaku_font_family';
   String _danmakuFontFamily = '';
-  final String _danmakuOutlineStyleKey = 'danmaku_outline_style';
   DanmakuOutlineStyle _danmakuOutlineStyle = globals.isMobilePlatform
       ? DanmakuOutlineStyle.stroke
       : DanmakuOutlineStyle.uniform;
@@ -951,7 +946,7 @@ class VideoPlayerState extends ChangeNotifier implements WindowListener {
   bool get showDanmakuDensityChart => _showDanmakuDensityChart;
   int get precacheBufferSizeMb => _precacheBufferSizeMb;
   int get precacheBufferDurationSeconds => _precacheBufferDurationSeconds;
-  double get danmakuOpacity => _danmakuOpacity;
+  double get danmakuOpacity => _danmakuOpacity; // 获取弹幕透明度
   bool get danmakuVisible => _danmakuVisible;
   bool get mergeDanmaku => _mergeDanmaku;
   double get danmakuFontSize => _danmakuFontSize;

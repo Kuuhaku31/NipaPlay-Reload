@@ -69,4 +69,9 @@ class SettingsKeys {
   static const String githubProxyUrl = 'github_proxy_url';
 
   static const String danmakuSupersample = 'danmaku_supersample';
+
+
+  // 弹幕相关设置
+  static const String danmakuOpacity      = 'danmaku_opacity';       // 弹幕透明度设置
+  static const String danmakuOutlineStyle = 'danmaku_outline_style'; // 弹幕描边样式设置
 }
