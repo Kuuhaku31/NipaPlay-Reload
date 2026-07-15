@@ -33,7 +33,9 @@ class ExternalPlayerConsolePage extends StatelessWidget {
                         session: session,
                         isPaused: session.isPaused ?? false,
                         danmakuOpacity: session.danmakuOpacity ?? 1.0,
+                        danmakuOutlineEnabled: session.danmakuOutlineEnabled,
                         supportsDanmakuOpacity: service.supportsDanmakuOpacity,
+                        supportsDanmakuOutline: service.supportsDanmakuOutline,
                         activeDanmakuIndices: service.activeDanmakuIndices,
                       ),
               ),
@@ -86,14 +88,18 @@ class _ConsoleCard extends StatelessWidget {
     required this.session,
     required this.isPaused,
     required this.danmakuOpacity,
+    required this.danmakuOutlineEnabled,
     required this.supportsDanmakuOpacity,
+    required this.supportsDanmakuOutline,
     required this.activeDanmakuIndices,
   });
 
   final ExternalPlayerSession session;
   final bool isPaused;
   final double danmakuOpacity;
+  final bool danmakuOutlineEnabled;
   final bool supportsDanmakuOpacity;
+  final bool supportsDanmakuOutline;
   final List<int> activeDanmakuIndices;
 
   @override
@@ -160,6 +166,8 @@ class _ConsoleCard extends StatelessWidget {
             _buildProgress(context),
             const SizedBox(height: 20),
             _buildDanmakuOpacity(context),
+            const SizedBox(height: 8),
+            _buildDanmakuOutline(context),
             const SizedBox(height: 20),
             Align(
               alignment: Alignment.centerRight,
@@ -274,6 +282,27 @@ class _ConsoleCard extends StatelessWidget {
           label: '${(danmakuOpacity * 100).round()}%',
           onChanged: supportsDanmakuOpacity
               ? ExternalPlayerConsoleService.setDanmakuOpacity
+              : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDanmakuOutline(BuildContext context) {
+    final theme = Theme.of(context);
+    final localizations = context.l10n;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            localizations.danmakuOutlineEnabledTitle,
+            style: theme.textTheme.titleMedium,
+          ),
+        ),
+        Switch(
+          value: danmakuOutlineEnabled,
+          onChanged: supportsDanmakuOutline
+              ? ExternalPlayerConsoleService.setDanmakuOutlineEnabled
               : null,
         ),
       ],

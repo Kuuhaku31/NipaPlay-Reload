@@ -40,10 +40,15 @@ class ExternalPlayerSession extends ChangeNotifier {
   /// 初始化外部播放器会话的播放状态
   void initialize({
     double   danmakuOpacity = 1.0,
+    double   danmakuOutlineWidth = 1.0,
     Duration position       = Duration.zero,
     bool     isPaused       = false,
   }) {
     this.danmakuOpacity = danmakuOpacity;
+    this.danmakuOutlineWidth = danmakuOutlineWidth > 0.0
+        ? danmakuOutlineWidth
+        : 1.0;
+    danmakuOutlineEnabled = danmakuOutlineWidth > 0.0;
     this.position       = position;
     this.isPaused       = isPaused;
   }
@@ -67,6 +72,8 @@ class ExternalPlayerSession extends ChangeNotifier {
   // 弹幕相关
   final String?  danmakuAssPath;  // 弹幕 ASS 文件路径
   double?        danmakuOpacity;  // 弹幕透明度, 范围 0.0 ~ 1.0
+  double         danmakuOutlineWidth = 1.0; // 启用时使用的 ASS 描边宽度
+  bool           danmakuOutlineEnabled = true; // 是否显示弹幕描边
   final Duration _maxDanmakuDuration; // 弹幕中最长的显示时长, 用于二分查找优化
   final List<ExternalPlayerDanmakuItem> danmakuItems; // 实际加载的弹幕
 

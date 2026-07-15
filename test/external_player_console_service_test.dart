@@ -17,6 +17,7 @@ ExternalPlayerSession _session(
   String? ipcPath,
   String? danmakuAssPath,
   double danmakuOpacity = 1.0,
+  double danmakuOutlineWidth = 1.0,
   Duration position = Duration.zero,
   Duration duration = Duration.zero,
   bool isPaused = false,
@@ -27,6 +28,7 @@ ExternalPlayerSession _session(
     ipcPath: ipcPath,
     danmakuAssPath: danmakuAssPath,
     danmakuOpacity: danmakuOpacity,
+    danmakuOutlineWidth: danmakuOutlineWidth,
     position: position,
     duration: duration,
     isPaused: isPaused,
@@ -39,6 +41,7 @@ ExternalPlayerSession _sessionFromProcessId(
   String? ipcPath,
   String? danmakuAssPath,
   double danmakuOpacity = 1.0,
+  double danmakuOutlineWidth = 1.0,
   Duration position = Duration.zero,
   Duration duration = Duration.zero,
   bool isPaused = false,
@@ -62,6 +65,7 @@ ExternalPlayerSession _sessionFromProcessId(
     danmakuItems: danmakuItems,
   )..initialize(
       danmakuOpacity: danmakuOpacity,
+      danmakuOutlineWidth: danmakuOutlineWidth,
       position: position,
       isPaused: isPaused,
     );
@@ -482,6 +486,67 @@ void main() {
         expect(reloadCommands, <List<dynamic>>[
           <dynamic>['script-message', 'nipaplay-danmaku-reload'],
         ]);
+      });
+
+      test('toggles danmaku outline and restores its width', () async {
+        final process = await _startPlayer();
+        final tempDir =
+            await Directory.systemTemp.createTemp('nipaplay_ipc_test_');
+        final socketPath = '${tempDir.path}/mpv.sock';
+        final assFile = File('${tempDir.path}/danmaku.ass');
+        const stylePrefix =
+            'Style: Danmaku,Arial,48.0,&H00FFFFFF,&H00FFFFFF,'
+            '&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,';
+        await assFile.writeAsString(
+          '[V4+ Styles]\n$stylePrefix' '2.5,0.0,2,0,0,0,1\n',
+        );
+        final reloadCommands = <List<dynamic>>[];
+        final server = await ServerSocket.bind(
+          InternetAddress(socketPath, type: InternetAddressType.unix),
+          0,
+        );
+        server.listen((client) {
+          client
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .listen((line) {
+            final request = jsonDecode(line) as Map<String, dynamic>;
+            reloadCommands.add(request['command'] as List<dynamic>);
+            client.writeln(jsonEncode({
+              'data': null,
+              'error': 'success',
+              'request_id': request['request_id'],
+            }));
+          });
+        });
+        final service = ExternalPlayerConsoleService.instance;
+        addTearDown(() async {
+          ExternalPlayerConsoleService.closePlayerAndConsole();
+          await server.close();
+          await _stopProcess(process);
+          await tempDir.delete(recursive: true);
+        });
+        ExternalPlayerConsoleService.showSession(_session(
+          process,
+          ipcPath: socketPath,
+          danmakuAssPath: assFile.path,
+          danmakuOutlineWidth: 2.5,
+        ));
+
+        expect(service.supportsDanmakuOutline, isTrue);
+        expect(service.session?.danmakuOutlineEnabled, isTrue);
+
+        ExternalPlayerConsoleService.setDanmakuOutlineEnabled(false);
+        await _waitUntil(() => reloadCommands.length == 1);
+        expect(service.session?.danmakuOutlineEnabled, isFalse);
+        expect(await assFile.readAsString(), contains('$stylePrefix' '0.0,0.0'));
+
+        ExternalPlayerConsoleService.setDanmakuOutlineEnabled(true);
+        await _waitUntil(() => reloadCommands.length == 2);
+        expect(service.session?.danmakuOutlineEnabled, isTrue);
+        expect(await assFile.readAsString(), contains('$stylePrefix' '2.5,0.0'));
+        expect(File('${assFile.path}.nipaplay.tmp').existsSync(), isFalse);
       });
 
       test('replacing a session clears the previous progress', () async {

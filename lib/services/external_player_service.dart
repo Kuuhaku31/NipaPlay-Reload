@@ -403,6 +403,7 @@ class ExternalPlayerService {
         danmakuItems: danmakuAssets?.danmakuItems ?? const [],
       )..initialize(
           danmakuOpacity: danmakuAssets?.opacity ?? 1.0,
+          danmakuOutlineWidth: danmakuAssets?.outlineWidth ?? 1.0,
           position: Duration(milliseconds: history?.lastPosition ?? 0),
         );
 
@@ -601,6 +602,7 @@ class ExternalPlayerService {
         assPath: assPath,
         luaPath: luaPath,
         opacity: assSettings.opacity,
+        outlineWidth: _resolveAssOutlineWidth(assSettings),
         danmakuItems: consoleItems,
       );
     } catch (e, st) {
@@ -923,6 +925,17 @@ class ExternalPlayerService {
         return AssOutlineStyle.stroke;
       case DanmakuOutlineStyle.uniform:
         return AssOutlineStyle.uniform;
+    }
+  }
+
+  static double _resolveAssOutlineWidth(AssExportSettings settings) {
+    switch (settings.outlineStyle) {
+      case AssOutlineStyle.none:
+        return 0.0;
+      case AssOutlineStyle.stroke:
+        return settings.outlineWidth.clamp(0.0, 8.0).toDouble();
+      case AssOutlineStyle.uniform:
+        return (settings.outlineWidth * 1.5).clamp(0.0, 8.0).toDouble();
     }
   }
 

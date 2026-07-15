@@ -19,7 +19,7 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
   static ExternalPlayerConsoleService get instance => _instance;
 
   ExternalPlayerSession? _session; // 当前活跃的外部播放器会话
-  Future<void> _danmakuOpacityUpdateQueue = Future<void>.value();
+  Future<void> _danmakuStyleUpdateQueue = Future<void>.value();
 
   static bool get isSupportedPlatform => !kIsWeb && Platform.isLinux;
 
@@ -28,6 +28,7 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
   ExternalPlayerSession? get session => _session;
   bool get hasActiveSession => _session != null;
   bool get supportsDanmakuOpacity => _session?.ipcPath != null && _session?.danmakuAssPath != null;
+  bool get supportsDanmakuOutline => _session?.ipcPath != null && _session?.danmakuAssPath != null;
 
   /// 获取当前播放位置正在显示的弹幕索引列表, 按照 startTime 升序排列
   List<int> get activeDanmakuIndices {
@@ -126,12 +127,33 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
     final value = opacity.clamp(0.0, 1.0).toDouble();
     current.danmakuOpacity = value;
     _instance.notifyListeners();
-    _instance._danmakuOpacityUpdateQueue =
-        _instance._danmakuOpacityUpdateQueue.then((_) async {
+    _instance._danmakuStyleUpdateQueue =
+        _instance._danmakuStyleUpdateQueue.then((_) async {
       if (!_isCurrentSession(current) || current.danmakuOpacity != value) {
         return;
       }
       await _setDanmakuOpacity(current, assPath, value);
+    });
+  }
+
+  /// 设置当前外部播放器是否显示弹幕描边
+  static void setDanmakuOutlineEnabled(bool enabled) {
+
+    // 参数检查
+    final current = _instance._session;
+    if (!_isIpcOK(current)) return;
+    final assPath = current!.danmakuAssPath;
+    if (current.ipcPath == null || assPath == null || assPath.isEmpty) return;
+
+    current.danmakuOutlineEnabled = enabled;
+    _instance.notifyListeners();
+    _instance._danmakuStyleUpdateQueue =
+        _instance._danmakuStyleUpdateQueue.then((_) async {
+      if (!_isCurrentSession(current) ||
+          current.danmakuOutlineEnabled != enabled) {
+        return;
+      }
+      await _setDanmakuOutlineEnabled(current, assPath, enabled);
     });
   }
 
@@ -294,6 +316,58 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
       }
     } catch (error) {
       debugPrint('[ExtPlayerConsole] Failed to update danmaku opacity: $error');
+    } finally {
+      if (temporaryFile?.existsSync() == true) {
+        temporaryFile?.deleteSync();
+      }
+    }
+  }
+
+  static Future<void> _setDanmakuOutlineEnabled(
+    ExternalPlayerSession session,
+    String assPath,
+    bool enabled,
+  ) async {
+    File? temporaryFile;
+    try {
+      final file = File(assPath);
+      final originalAss = await file.readAsString();
+      if (!_isCurrentSession(session) ||
+          session.danmakuOutlineEnabled != enabled) {
+        return;
+      }
+
+      final stylePattern = RegExp(
+        r'^(Style:\s*(?:[^,\r\n]*,){16})([^,\r\n]*)(,.*)$',
+        multiLine: true,
+      );
+      if (!stylePattern.hasMatch(originalAss)) {
+        debugPrint('[ExtPlayerConsole] Danmaku ASS has no style outlines: $assPath');
+        return;
+      }
+      final outlineWidth = enabled
+          ? session.danmakuOutlineWidth.toStringAsFixed(1)
+          : '0.0';
+      final updated = originalAss.replaceAllMapped(
+        stylePattern,
+        (match) => '${match.group(1)}$outlineWidth${match.group(3)}',
+      );
+
+      temporaryFile = File('$assPath.nipaplay.tmp');
+      await temporaryFile.writeAsString(updated, encoding: utf8, flush: true);
+      if (!_isCurrentSession(session) ||
+          session.danmakuOutlineEnabled != enabled) {
+        return;
+      }
+
+      temporaryFile.renameSync(assPath);
+      temporaryFile = null;
+      final reloaded = await _reloadMpvDanmaku(session);
+      if (!reloaded) {
+        debugPrint('[ExtPlayerConsole] Failed to reload danmaku after outline update');
+      }
+    } catch (error) {
+      debugPrint('[ExtPlayerConsole] Failed to update danmaku outline: $error');
     } finally {
       if (temporaryFile?.existsSync() == true) {
         temporaryFile?.deleteSync();
