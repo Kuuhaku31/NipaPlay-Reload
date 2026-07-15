@@ -32,7 +32,7 @@ String? resolveDanmakuSenderId(Map<dynamic, dynamic> item) {
     final value = _nonEmptyDanmakuIdentity(p[3]);
     if (value != null) return value;
   }
-  return _nonEmptyDanmakuIdentity(item['cid']);
+  return null;
 }
 
 String? _nonEmptyDanmakuIdentity(dynamic value) {
@@ -151,4 +151,4 @@ List<Map<String, dynamic>> parseDanmakuListInBackground(List<dynamic>? rawDanmak
     //debugPrint('Error parsing danmaku data in background isolate: $e');
     return []; // Return an empty list or handle error as appropriate
   }
-} 
+}

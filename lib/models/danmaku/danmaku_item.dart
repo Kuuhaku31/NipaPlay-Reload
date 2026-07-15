@@ -2,6 +2,9 @@
 // lib/models/danmaku/danmaku_item.dart
 // 弹幕模型
 
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:nipaplay/constants/danmaku/mode.dart';
 
 
@@ -24,16 +27,19 @@ class DanmakuItem {
     this.mode = DanmakuMode.scroll,
     int colorRgb = 0xFFFFFF,
     this.isMe = false,
-    this.senderId,
-    this.danmakuId,
+    String? senderId,
+    String? danmakuId,
     this.sentAt,
-    this.source,
+    String? source,
     this.fontSize,
     this.pool,
     this.weight,
     Map<String, dynamic> extra = const {},
   }) :
     colorRgb = colorRgb & 0xFFFFFF,
+    senderId = _nonEmptyString(senderId),
+    danmakuId = _nonEmptyString(danmakuId),
+    source = _nonEmptyString(source),
     extra = Map<String, dynamic>.unmodifiable(extra)
   ;
 
@@ -50,7 +56,7 @@ class DanmakuItem {
   final  String?      senderId;   // 数据源提供的发送者身份标识或匿名哈希
   final  String?      danmakuId;  // 数据源提供的弹幕 ID, 不等同于发送者身份
   final  DateTime?    sentAt;     // 弹幕实际发送时间
-  final  String?      source;     // 弹幕来源或轨道名称
+  final  String?      source;     // 数据源适配器的稳定键, 不承载轨道显示名称
   final  double?      fontSize;   // 数据源指定的原始字号
   final  int?         pool;       // 数据源中的弹幕池编号
   final  int?         weight;     // 数据源中的弹幕权重
@@ -75,6 +81,76 @@ class DanmakuItem {
     final green = (colorRgb >> 8) & 0xFF;
     final blue  = colorRgb & 0xFF;
     return 'rgb($red,$green,$blue)';
+  }
+
+  /// 在缓存, 多来源合并和渲染出口之间保持稳定的弹幕标识.
+  ///
+  /// 数据源提供 ID 时使用 `来源:ID`; 缺少 ID 时对不会随管线变化的源字段
+  /// 生成 SHA-1, 避免随机 ID 导致缓存和去重结果漂移.
+  String get stableId {
+    final sourceId = source ?? 'unknown';
+    if (danmakuId != null) return '$sourceId:$danmakuId';
+    final identity = <Object?>[
+      sourceId,
+      time.inMicroseconds,
+      mode.code,
+      colorRgb,
+      senderId,
+      content,
+    ].join('\u0000');
+    return '$sourceId:${sha1.convert(utf8.encode(identity))}';
+  }
+
+  /// 从强类型缓存格式反序列化.
+  factory DanmakuItem.fromJson(Map<String, dynamic> json) {
+    final timeUs = _parseInt(json['timeUs']);
+    final rawExtra = json['extra'];
+    return DanmakuItem(
+      time: timeUs == null
+          ? _parseTime(json['time'] ?? json['t'])
+          : Duration(microseconds: timeUs),
+      content: (json['content'] ?? json['c'] ?? json['m'])?.toString() ?? '',
+      mode: _parseMode(json),
+      colorRgb: _parseColor(
+        json['colorRgb'] ?? json['color'] ?? json['r'],
+      ),
+      isMe: _parseBool(json['isMe']),
+      senderId: _nonEmptyString(json['senderId']),
+      danmakuId: _nonEmptyString(
+        json['danmakuId'] ?? json['cid'] ?? json['id'],
+      ),
+      sentAt: _parseDateTime(
+        json['sentAt'] ?? json['sendTimestamp'] ?? json['timestamp'],
+      ),
+      source: _nonEmptyString(json['source']),
+      fontSize: _parseDouble(json['fontSize']),
+      pool: _parseInt(json['pool']),
+      weight: _parseInt(json['weight']),
+      extra: rawExtra is Map
+          ? Map<String, dynamic>.from(rawExtra)
+          : const {},
+    );
+  }
+
+  /// 转换为强类型缓存格式.
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'schemaVersion': 1,
+      'stableId': stableId,
+      'timeUs': time.inMicroseconds,
+      'content': content,
+      'mode': mode.code,
+      'colorRgb': colorRgb,
+      'isMe': isMe,
+      if (senderId != null) 'senderId': senderId,
+      if (danmakuId != null) 'danmakuId': danmakuId,
+      if (sentAt != null) 'sentAt': sentAt!.toUtc().toIso8601String(),
+      if (source != null) 'source': source,
+      if (fontSize != null) 'fontSize': fontSize,
+      if (pool != null) 'pool': pool,
+      if (weight != null) 'weight': weight,
+      if (extra.isNotEmpty) 'extra': extra,
+    };
   }
 
   /// 从已经进入应用层的旧 Map 创建强类型弹幕.
@@ -112,6 +188,7 @@ class DanmakuItem {
       'fontsize',
       'pool',
       'weight',
+      'p',
     };
     for (final key in modeledMapKeys) {
       extra.remove(key);

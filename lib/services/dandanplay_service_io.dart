@@ -9,6 +9,7 @@ import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/utils/network_settings.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
 import 'danmaku_cache_manager.dart';
+import 'danmaku_normalizer.dart';
 import 'debug_log_service.dart';
 import 'android_saf_service.dart';
 import 'package:nipaplay/utils/remote_media_fetcher.dart';
@@ -1697,75 +1698,21 @@ class DandanplayService {
     String episodeId,
     int animeId,
   ) {
-    final data = json.decode(responseBody);
-    if (data['comments'] != null) {
-      final comments = data['comments'] as List;
-      ////debugPrint('获取到原始弹幕数: ${comments.length}');
-
-      final formattedComments = comments.map((comment) {
-        // 解析 p 字段，格式为 "时间,模式,颜色,用户ID"
-        final pParts = (comment['p'] as String).split(',');
-        final time = double.tryParse(pParts[0]) ?? 0.0;
-        final mode = DanmakuMode.fromCode(int.tryParse(pParts[1]));
-        final color = int.tryParse(pParts[2]) ?? 16777215; // 默认白色
-        final content = comment['m'] as String;
-
-        // 转换颜色格式
-        final r = (color >> 16) & 0xFF;
-        final g = (color >> 8) & 0xFF;
-        final b = color & 0xFF;
-        final colorValue = 'rgb($r,$g,$b)';
-
-        return {
-          'time': time,
-          'content': content,
-          'type': mode.typeName,
-          'color': colorValue,
-          'isMe': false,
-        };
-      }).toList();
-
-      // 去除重复弹幕
-      final uniqueComments = _removeDuplicateDanmaku(formattedComments);
-
-      debugPrint(
-        '从网络加载弹幕成功: $episodeId, 格式化后数量: ${formattedComments.length}, 去重后数量: ${uniqueComments.length}',
-      );
-
-      // 异步保存到缓存
-      DanmakuCacheManager.saveDanmakuToCache(
-        episodeId,
-        animeId,
-        uniqueComments,
-      ).then((_) => debugPrint('弹幕已保存到缓存: $episodeId'));
-
-      return {
-        'comments': uniqueComments,
-        'fromCache': false,
-        'count': uniqueComments.length,
-      };
+    if (!DandanplayDanmakuNormalizer.hasCommentList(responseBody)) {
+      throw Exception('该视频暂无弹幕');
     }
+    final result = DandanplayDanmakuNormalizer.normalizeLegacyResponse(
+      responseBody,
+    );
+    final comments = result['comments'] as List<dynamic>;
 
-    ////debugPrint('API响应中没有comments字段: ${data.keys.toList()}');
-    throw Exception('该视频暂无弹幕');
-  }
-
-  /// 去除重复的弹幕
-  static List<dynamic> _removeDuplicateDanmaku(List<dynamic> comments) {
-    final seen = <String>{};
-    final uniqueComments = <dynamic>[];
-
-    for (final comment in comments) {
-      // 将弹幕转换为唯一字符串表示，用于去重
-      final key =
-          '${comment['time']}_${comment['content']}_${comment['type']}_${comment['color']}';
-      if (!seen.contains(key)) {
-        seen.add(key);
-        uniqueComments.add(comment);
-      }
-    }
-
-    return uniqueComments;
+    debugPrint('从网络加载弹幕成功: $episodeId, 标准化后数量: ${comments.length}');
+    DanmakuCacheManager.saveDanmakuToCache(
+      episodeId,
+      animeId,
+      comments,
+    ).then((_) => debugPrint('弹幕已保存到缓存: $episodeId'));
+    return result;
   }
 
   /// 通过自建代理服务器获取弹幕

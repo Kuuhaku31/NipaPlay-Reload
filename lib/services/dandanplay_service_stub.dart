@@ -6,11 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
-import 'package:nipaplay/utils/danmaku_parser.dart';
 import 'package:nipaplay/utils/network_settings.dart';
 import 'package:nipaplay/utils/media_filename_parser.dart';
 import 'package:nipaplay/services/file_picker_service.dart';
 import 'package:nipaplay/services/web_remote_access_service.dart';
+import 'package:nipaplay/services/danmaku_normalizer.dart';
 
 class DandanplayService {
   static const String appId = "nipaplayv1";
@@ -1177,7 +1177,9 @@ class DandanplayService {
         );
 
         if (response.statusCode == 200) {
-          return json.decode(response.body);
+          return DandanplayDanmakuNormalizer.normalizeLegacyResponse(
+            response.body,
+          );
         } else {
           return {'comments': [], 'count': 0};
         }
@@ -2396,48 +2398,13 @@ class DandanplayService {
     String episodeId,
     int animeId,
   ) {
-    final data = json.decode(responseBody);
-    if (data['comments'] != null) {
-      final comments = data['comments'] as List;
-
-      final formattedComments = comments.map((comment) {
-
-        // 将 comment 转换为 Map<String, dynamic>
-        final raw = Map<String, dynamic>.from(comment as Map);
-        final pParts = (raw['p'] as String).split(',');
-
-        final time     = double.tryParse(pParts[0]) ?? 0.0;   // 弹幕出现时间 (秒)
-        final mode     = DanmakuMode.fromCode(int.tryParse(pParts[1])); // 弹幕模式
-        final color    = int.tryParse(pParts[2]) ?? 16777215; // 弹幕颜色 (十进制 RGB)
-        final content  = raw['m'] as String;                  // 弹幕内容
-        final senderId = resolveDanmakuSenderId(raw);         // 发送者ID
-
-        // 将十进制颜色值转换为 RGB 格式
-        final r = (color >> 16) & 0xFF;
-        final g = (color >> 8) & 0xFF;
-        final b = color & 0xFF;
-        final colorValue = 'rgb($r,$g,$b)';
-
-        return {
-          'time': time,
-          'content': content,
-          'type': mode.typeName,
-          'color': colorValue,
-          'isMe': false,
-          if (senderId != null) 'senderId': senderId,
-          if (raw['cid'] != null) 'cid': raw['cid'],
-          'source': 'dandanplay',
-        };
-      }).toList();
-
-      return {
-        'comments': formattedComments,
-        'fromCache': false,
-        'count': formattedComments.length
-      };
+    if (!DandanplayDanmakuNormalizer.hasCommentList(responseBody)) {
+      throw Exception('该视频暂无弹幕');
     }
-
-    throw Exception('该视频暂无弹幕');
+    final result = DandanplayDanmakuNormalizer.normalizeLegacyResponse(
+      responseBody,
+    );
+    return result;
   }
 
   static String _b(String a) {

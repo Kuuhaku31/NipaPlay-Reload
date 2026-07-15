@@ -869,7 +869,7 @@ class ExternalPlayerService {
       final value = _nonEmptyMetadata(p[3]);
       if (value != null) return value;
     }
-    return _nonEmptyMetadata(raw['cid']);
+    return null;
   }
 
   static String? _resolveSourceName(Map<String, dynamic>? raw) {
