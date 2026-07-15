@@ -92,8 +92,7 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
       if (_animeId != null && _animeId! < 0) {
         _danmakuList = [];
         _danmakuListVersion++;
-        _danmakuTracks.clear();
-        _danmakuTrackEnabled.clear();
+        _danmakuSources.clear();
         _setStatus(PlayerStatus.recognizing, message: '自定义媒体，跳过弹幕匹配');
         return;
       }
@@ -136,8 +135,7 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
           } else {
             _danmakuList = [];
             _danmakuListVersion++;
-            _danmakuTracks.clear();
-            _danmakuTrackEnabled.clear();
+            _danmakuSources.clear();
             final handled = await _tryManualMatchDanmaku(
               videoPath,
               initialFileName: videoInfo['fileName']?.toString(),
@@ -153,8 +151,7 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
         if (!canContinue()) return;
         _danmakuList = [];
         _danmakuListVersion++;
-        _danmakuTracks.clear();
-        _danmakuTrackEnabled.clear();
+        _danmakuSources.clear();
         _setStatus(PlayerStatus.recognizing, message: '无法连接服务器，跳过加载弹幕');
       }
     } catch (e) {

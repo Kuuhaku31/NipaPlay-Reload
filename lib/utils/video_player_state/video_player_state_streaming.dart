@@ -448,8 +448,7 @@ extension VideoPlayerStateStreaming on VideoPlayerState {
           debugPrint('Jellyfin流媒体弹幕加载失败: $e');
           _danmakuList = [];
           _danmakuListVersion++;
-          _danmakuTracks.clear();
-          _danmakuTrackEnabled.clear();
+          _danmakuSources.clear();
           _setStatus(PlayerStatus.recognizing, message: 'Jellyfin弹幕加载失败，跳过');
           return true; // 尽管失败，但仍标记为已处理
         }

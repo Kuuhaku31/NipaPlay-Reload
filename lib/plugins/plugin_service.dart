@@ -102,8 +102,6 @@ class PluginService extends ChangeNotifier {
 
   PluginEventBus get eventBus => _eventBus;
 
-  List<Map<String, dynamic>>? get pendingDanmakuData => _pendingDanmakuData;
-
   List<String> get activeDanmakuBlockWords {
     final merged = <String>[];
     for (final plugin in _plugins) {
@@ -708,6 +706,20 @@ class PluginService extends ChangeNotifier {
   void updateDanmakuData(List<Map<String, dynamic>>? newDanmaku) {
     _pendingDanmakuData = newDanmaku;
     notifyListeners();
+  }
+
+  List<Map<String, dynamic>> processDanmaku(
+    List<Map<String, dynamic>> input,
+  ) {
+    _pendingDanmakuData = null;
+    _eventBus.emitDanmakuLoaded({
+      'danmaku': input.map((item) => Map<String, dynamic>.from(item)).toList(),
+    });
+    final output = _pendingDanmakuData ?? input;
+    _pendingDanmakuData = null;
+    return output
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   Future<void> _reloadPlugins() async {

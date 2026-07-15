@@ -46,6 +46,8 @@ import 'media_info_helper.dart';
 import 'package:nipaplay/models/watch_history_model.dart';
 import 'package:nipaplay/models/jellyfin_transcode_settings.dart';
 import 'package:nipaplay/models/danmaku_auto_load_strategy.dart';
+import 'package:nipaplay/models/danmaku/danmaku_item.dart';
+import 'package:nipaplay/models/danmaku/danmaku_source.dart';
 import 'package:nipaplay/models/media_server_playback.dart';
 import 'package:nipaplay/models/playable_item.dart';
 import 'package:nipaplay/models/playback_detail_context.dart';
@@ -54,6 +56,7 @@ import 'package:image/image.dart' as img;
 import 'package:nipaplay/themes/nipaplay/widgets/blur_snackbar.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/blur_dialog.dart';
 import 'package:nipaplay/plugins/plugin_service.dart';
+import 'package:nipaplay/services/danmaku_pipeline.dart';
 
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:nipaplay/utils/ios_container_path_fixer.dart';
@@ -355,8 +358,8 @@ class VideoPlayerState extends ChangeNotifier implements WindowListener {
   int _danmakuListVersion = 0;
 
   // 多轨道弹幕系统
-  final Map<String, Map<String, dynamic>> _danmakuTracks = {};
-  final Map<String, bool> _danmakuTrackEnabled = {};
+  final Map<String, DanmakuSource> _danmakuSources = {};
+  final DanmakuPipeline _danmakuPipeline = const DanmakuPipeline();
   final double _controlBarHeight = 20.0; // 固定高度
   final String _minimalProgressBarEnabledKey = 'minimal_progress_bar_enabled';
   bool _minimalProgressBarEnabled = false; // 默认关闭
@@ -908,8 +911,20 @@ class VideoPlayerState extends ChangeNotifier implements WindowListener {
   ScreenshotSaveTarget get screenshotSaveTarget => _screenshotSaveTarget;
   List<Map<String, dynamic>> get danmakuList => _danmakuList;
   int get danmakuListVersion => _danmakuListVersion;
-  Map<String, Map<String, dynamic>> get danmakuTracks => _danmakuTracks;
-  Map<String, bool> get danmakuTrackEnabled => _danmakuTrackEnabled;
+  Map<String, DanmakuSource> get danmakuSources =>
+      Map<String, DanmakuSource>.unmodifiable(_danmakuSources);
+  Map<String, Map<String, dynamic>> get danmakuTracks =>
+      Map<String, Map<String, dynamic>>.unmodifiable(
+        _danmakuSources.map(
+          (id, source) => MapEntry(id, source.toLegacyMap()),
+        ),
+      );
+  Map<String, bool> get danmakuTrackEnabled =>
+      Map<String, bool>.unmodifiable(
+        _danmakuSources.map(
+          (id, source) => MapEntry(id, source.enabled),
+        ),
+      );
   double get controlBarHeight => _controlBarHeight;
   bool get minimalProgressBarEnabled => _minimalProgressBarEnabled;
   Color get minimalProgressBarColor => Color(_minimalProgressBarColor);
