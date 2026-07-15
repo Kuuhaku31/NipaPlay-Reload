@@ -1,9 +1,15 @@
+
+// lib/pages/external_player_console_page.dart
+// 掌管 Linux 平台下外部播放器会话的控制台页面
+
+
 import 'package:flutter/material.dart';
 import 'package:nipaplay/l10n/l10n.dart';
 import 'package:nipaplay/models/external_player_session.dart';
 import 'package:nipaplay/services/external_player_console_service.dart';
 
-/// Console for the single external-player session managed on Linux.
+
+/// 一个用于显示外部播放器会话信息的控制台页面
 class ExternalPlayerConsolePage extends StatelessWidget {
   const ExternalPlayerConsolePage({super.key});
 
@@ -213,15 +219,6 @@ class _ConsoleCard extends StatelessWidget {
   Widget _buildProgress(BuildContext context) {
     final theme = Theme.of(context);
     final localizations = context.l10n;
-    final supportsProgress = session.ipcPath != null;
-    final hasProgress =
-        session.position != null && session.duration > Duration.zero;
-    final progressText = !supportsProgress
-        ? localizations.externalPlayerConsoleProgressUnsupported
-        : !hasProgress
-            ? localizations.externalPlayerConsoleProgressLoading
-            : '${_formatDuration(session.position!)} / '
-                '${_formatDuration(session.duration)}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,18 +228,7 @@ class _ConsoleCard extends StatelessWidget {
           style: theme.textTheme.titleMedium,
         ),
         const SizedBox(height: 10),
-        LinearProgressIndicator(
-          value: supportsProgress ? session.fraction : 0,
-          minHeight: 6,
-          borderRadius: BorderRadius.circular(3),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          progressText,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
+        _SeekProgress(session: session),
       ],
     );
   }
@@ -286,8 +272,83 @@ class _ConsoleCard extends StatelessWidget {
   String _nonEmptyOr(String? value, String fallback) {
     return value == null || value.trim().isEmpty ? fallback : value;
   }
+}
 
-  String _formatDuration(Duration value) {
+
+/// 显示外部播放器进度的滑块组件
+class _SeekProgress extends StatefulWidget {
+  const _SeekProgress({required this.session});
+
+  final ExternalPlayerSession session;
+
+  @override
+  State<_SeekProgress> createState() => _SeekProgressState();
+}
+
+/// 显示外部播放器进度的滑块组件的状态类
+class _SeekProgressState extends State<_SeekProgress> {
+  double? _dragFraction;
+
+  /// 当 widget 更新时, 如果 session 发生变化, 则重置拖动进度
+  @override
+  void didUpdateWidget(_SeekProgress oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.session, widget.session)) _dragFraction = null;
+  }
+
+  /// 构建进度滑块组件
+  @override
+  Widget build(BuildContext context) {
+    final theme            = Theme.of(context);
+    final localizations    = context.l10n;
+    final session          = widget.session;
+    final supportsProgress = session.ipcPath != null && session.ipcPath!.isNotEmpty;
+    final hasProgress      = session.position != null && session.duration > Duration.zero;
+    final canSeek          = supportsProgress && hasProgress;
+    final fraction         = (_dragFraction ?? session.fraction ?? 0.0).clamp(0.0, 1.0).toDouble();
+    final displayPosition  = _dragFraction == null || !hasProgress
+        ? session.position
+        : Duration(milliseconds: (session.duration.inMilliseconds * fraction).round());
+    final progressText = !supportsProgress
+        ? localizations.externalPlayerConsoleProgressUnsupported
+        : !hasProgress
+            ? localizations.externalPlayerConsoleProgressLoading
+            : '${_formatDuration(displayPosition!)} / ${_formatDuration(session.duration)}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Slider(
+          value: fraction,
+          min: 0,
+          max: 1,
+          label: hasProgress ? _formatDuration(displayPosition!) : null,
+          onChangeStart: canSeek
+              ? (value) => setState(() => _dragFraction = value)
+              : null,
+          onChanged: canSeek
+              ? (value) => setState(() => _dragFraction = value)
+              : null,
+          onChangeEnd: canSeek
+              ? (value) {
+                  ExternalPlayerConsoleService.seekToFraction(value);
+                  setState(() => _dragFraction = null);
+                }
+              : null,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          progressText,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 将给定的 Duration 转换为格式化的字符串 (HH:MM:SS 或 MM:SS)
+  static String _formatDuration(Duration value) {
     final hours = value.inHours;
     final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
     final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');

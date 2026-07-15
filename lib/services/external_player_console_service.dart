@@ -81,13 +81,29 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
     _setMpvPaused(current.ipcPath!, targetPaused);
   }
 
+  /// 将 mpv 跳转到总时长中的指定比例
+  static void seekToFraction(double fraction) {
+
+    // 参数检查
+    final current = _instance._session;
+    if (!_isIpcOK(current) || current!.duration <= Duration.zero) return;
+
+    final value = fraction.clamp(0.0, 1.0).toDouble();
+    final position = Duration(milliseconds: (current.duration.inMilliseconds * value).round());
+
+    // 先更新控制台显示, mpv 的实际位置会由后续轮询校正
+    current.position = position;
+    _instance.notifyListeners();
+    _seekMpv(current, position);
+  }
+
   /// 设置当前外部播放器的弹幕透明度
   static void setDanmakuOpacity(double opacity) {
 
     // 参数检查
     final current = _instance._session;
-    if (current == null || current.ipcPath == null) return;
-    final assPath = current.danmakuAssPath;
+    if (!_isIpcOK(current)) return;
+    final assPath = current!.danmakuAssPath;
     if (current.ipcPath == null || assPath == null || assPath.isEmpty) return;
 
     final value = opacity.clamp(0.0, 1.0).toDouble();
@@ -181,6 +197,47 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
     }
   }
 
+  /// 向 mpv 的 JSON IPC 套接字发送绝对精确跳转命令
+  /// 不保证命令一定会成功, 失败时播放状态轮询会恢复实际进度
+  static void _seekMpv(ExternalPlayerSession session, Duration position) async {
+
+    // 参数检查
+    final ipcPath = session.ipcPath;
+    if (!_isIpcOK(session) || !_isCurrentSession(session)) return;
+
+    Socket? socket; // 本次命令的套接字连接
+    try {
+
+      // 创建套接字连接并发送命令
+      final host = InternetAddress(ipcPath!, type: InternetAddressType.unix);
+      const timeout = Duration(milliseconds: 500);
+      socket = await Socket.connect(host, 0, timeout: timeout);
+
+      if (!_isCurrentSession(session)) return;
+
+      final str = jsonEncode({'command': ['seek', position.inMilliseconds / 1000.0, 'absolute+exact', ], 'request_id': 6});
+      socket.write('$str\n');
+      await socket.flush();
+
+      // 等待 mpv 响应, 但不处理响应内容, 只打印日志
+      final lines = socket
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(milliseconds: 800));
+      await for (final line in lines) {
+
+        // 只处理 request_id 为 6 的响应, 并检查 error 字段
+        final value = jsonDecode(line);
+        if (value is! Map<String, dynamic> || value['request_id'] != 6) continue;
+        if (value['error'] != 'success') debugPrint('[ExtPlayerConsole] Failed to seek mpv: ${value['error']}');
+        return;
+      }
+    }
+    catch (e) { debugPrint('[ExtPlayerConsole] Failed to seek mpv: $e'); } 
+    finally { socket?.destroy(); }
+  }
+
   static Future<void> _setDanmakuOpacity(
     ExternalPlayerSession session,
     String assPath,
@@ -266,6 +323,10 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
     } finally {
       socket?.destroy();
     }
+  }
+
+  static bool _isIpcOK(ExternalPlayerSession? current) {
+    return current != null && current.ipcPath != null && current.ipcPath!.isNotEmpty;
   }
 
 

@@ -273,6 +273,60 @@ void main() {
         expect(service.session?.isPaused, isFalse);
       });
 
+      test('seeks mpv through JSON IPC', () async {
+        final process = await _startPlayer();
+        final tempDir =
+            await Directory.systemTemp.createTemp('nipaplay_ipc_test_');
+        final socketPath = '${tempDir.path}/mpv.sock';
+        final commands = <List<dynamic>>[];
+        final server = await ServerSocket.bind(
+          InternetAddress(socketPath, type: InternetAddressType.unix),
+          0,
+        );
+        server.listen((client) {
+          client
+              .cast<List<int>>()
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .listen((line) {
+            final request = jsonDecode(line) as Map<String, dynamic>;
+            final command = request['command'] as List<dynamic>;
+            if (command.first == 'seek') {
+              commands.add(command);
+            }
+            client.writeln(jsonEncode({
+              'data': null,
+              'error': 'success',
+              'request_id': request['request_id'],
+            }));
+          });
+        });
+        final service = ExternalPlayerConsoleService.instance;
+        addTearDown(() async {
+          ExternalPlayerConsoleService.closePlayerAndConsole();
+          await server.close();
+          await _stopProcess(process);
+          await tempDir.delete(recursive: true);
+        });
+        ExternalPlayerConsoleService.showSession(_session(
+          process,
+          ipcPath: socketPath,
+          duration: const Duration(minutes: 20),
+          position: const Duration(minutes: 2),
+        ));
+
+        ExternalPlayerConsoleService.seekToFraction(0.625);
+        await _waitUntil(() => commands.isNotEmpty);
+
+        expect(
+          service.session?.position,
+          const Duration(minutes: 12, seconds: 30),
+        );
+        expect(commands, <List<dynamic>>[
+          <dynamic>['seek', 750.0, 'absolute+exact'],
+        ]);
+      });
+
       test('coalesces rapid danmaku opacity updates without truncating ASS', () async {
         final process = await _startPlayer();
         final tempDir =
