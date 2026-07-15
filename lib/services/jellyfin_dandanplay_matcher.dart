@@ -6,7 +6,6 @@ import 'package:nipaplay/models/jellyfin_model.dart';
 import 'package:nipaplay/models/watch_history_model.dart';
 import 'package:nipaplay/services/dandanplay_service.dart';
 import 'package:nipaplay/services/jellyfin_service.dart';
-import 'package:nipaplay/services/danmaku_cache_manager.dart';
 import 'package:nipaplay/services/jellyfin_episode_mapping_service.dart';
 import 'package:nipaplay/services/web_remote_access_service.dart';
 import 'package:flutter/rendering.dart';
@@ -94,15 +93,7 @@ class JellyfinDandanplayMatcher {
     try {
       debugPrint('开始预加载弹幕: episodeId=$episodeId, animeId=$animeId');
 
-      // 检查是否已经缓存了弹幕数据
-      final cachedDanmaku =
-          await DanmakuCacheManager.getDanmakuFromCache(episodeId);
-      if (cachedDanmaku != null) {
-        debugPrint('弹幕已存在于缓存中，无需预加载: episodeId=$episodeId');
-        return;
-      }
-
-      // 异步预加载弹幕，不等待结果
+      // Repository 会复用缓存命中和正在进行的请求
       DandanplayService.getDanmaku(episodeId, animeId).then((danmakuData) {
         final count = danmakuData['count'];
         if (count != null) {

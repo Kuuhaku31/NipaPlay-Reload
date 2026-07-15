@@ -308,70 +308,6 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
         debugPrint('更新内部弹幕ID状态: episodeId=$_episodeId, animeId=$_animeId');
       }
 
-      // 从缓存加载弹幕
-      final cachedDanmaku =
-          await DanmakuCacheManager.getDanmakuFromCache(episodeId);
-      if (!canContinue()) return;
-      if (cachedDanmaku != null) {
-        debugPrint('从缓存中找到弹幕数据，共${cachedDanmaku.length}条');
-        _setStatus(PlayerStatus.recognizing, message: '正在从缓存加载弹幕...');
-
-        // 设置最终加载阶段标志，减少动画性能消耗
-        _isInFinalLoadingPhase = true;
-        if (canContinue()) {
-          _notifyListeners();
-        } else {
-          return;
-        }
-
-        // 加载弹幕到控制器（Erika 原生弹幕由 _updateMergedDanmakuList 喂入，
-        // 此处不喂 Flutter 控制器，避免双画）
-        if (!_erikaNativeDanmaku) {
-          danmakuController?.loadDanmaku(cachedDanmaku);
-        }
-        _setStatus(PlayerStatus.playing,
-            message: '从缓存加载弹幕完成 (${cachedDanmaku.length}条)');
-
-        // 解析弹幕数据并添加到弹弹play轨道（优先 C++ 解析器）
-        final parsedDanmaku = await DanmakuParser.parseDanmakuListOptimized(
-            cachedDanmaku as List<dynamic>?,
-            (data) => compute(parseDanmakuListInBackground, data));
-        if (!canContinue()) return;
-
-        _danmakuTracks['dandanplay'] = {
-          'name': '弹弹play',
-          'source': 'dandanplay',
-          'episodeId': episodeId,
-          'animeId': animeIdStr,
-          'danmakuList': parsedDanmaku,
-          'count': parsedDanmaku.length,
-        };
-        _danmakuTrackEnabled['dandanplay'] = true;
-
-        // 触发弹幕加载完成事件，通知插件（在合并之前，以便插件可以修改数据）
-        if (!canContinue()) return;
-        _notifyPluginDanmakuLoaded(parsedDanmaku);
-
-        // 检查插件是否修改了弹幕数据
-        final pluginModified = _pluginService?.pendingDanmakuData;
-        if (pluginModified != null && pluginModified.isNotEmpty) {
-          _danmakuTracks['dandanplay']!['danmakuList'] = pluginModified;
-          _danmakuTracks['dandanplay']!['count'] = pluginModified.length;
-          _pluginService?.updateDanmakuData(null);
-        }
-
-        // 重新计算合并后的弹幕列表
-        if (!canContinue()) return;
-        _updateMergedDanmakuList();
-
-        if (canContinue()) {
-          _notifyListeners();
-        }
-        return;
-      }
-
-      debugPrint('缓存中没有找到弹幕，从网络加载中...');
-      // 从网络加载弹幕
       final animeId = int.tryParse(animeIdStr) ?? 0;
 
       // 设置最终加载阶段标志，减少动画性能消耗
@@ -389,7 +325,8 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
       if (!canContinue()) return;
 
       if (danmakuData['comments'] != null && danmakuData['comments'] is List) {
-        debugPrint('成功从网络加载弹幕，共${danmakuData['count']}条');
+        final fromCache = danmakuData['fromCache'] == true;
+        debugPrint('${fromCache ? "从缓存" : "从网络"}加载弹幕，共${danmakuData['count']}条');
 
         // 加载弹幕到控制器（Erika 原生弹幕由 _updateMergedDanmakuList 喂入，
         // 此处不喂 Flutter 控制器，避免双画）
@@ -440,7 +377,7 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
         }
 
         _setStatus(PlayerStatus.playing,
-            message: '弹幕加载完成 (${danmakuData['count']}条)');
+            message: '${fromCache ? "从缓存" : "弹幕"}加载完成 (${danmakuData['count']}条)');
         if (canContinue()) {
           _notifyListeners();
         }
@@ -702,29 +639,21 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
       return const [];
     }
 
-    // 1. 缓存 → 网络
+    // 1. Repository 统一处理缓存与远程获取
     List<dynamic>? raw;
     try {
-      final tCache = DateTime.now();
-      final cached = await DanmakuCacheManager.getDanmakuFromCache(episodeId);
-      debugPrint('[ExtDanmaku] 缓存查询: ${cached?.length ?? 0} 条, '
-          '耗时=${DateTime.now().difference(tCache).inMilliseconds}ms');
-      if (cached != null && cached.isNotEmpty) {
-        raw = cached;
-      } else {
-        debugPrint('[ExtDanmaku] 缓存未命中，发起网络请求…');
-        final animeIdInt = int.tryParse(animeId) ?? 0;
-        final tNet = DateTime.now();
-        final data = await DandanplayService.getDanmaku(episodeId, animeIdInt)
-            .timeout(const Duration(seconds: 32), onTimeout: () {
-          throw TimeoutException('加载弹幕超时');
-        });
-        debugPrint('[ExtDanmaku] 网络返回: count=${data['count']}, '
-            '耗时=${DateTime.now().difference(tNet).inMilliseconds}ms');
-        final comments = data['comments'];
-        if (comments is List && comments.isNotEmpty) {
-          raw = comments;
-        }
+      final animeIdInt = int.tryParse(animeId) ?? 0;
+      final startedAt = DateTime.now();
+      final data = await DandanplayService.getDanmaku(episodeId, animeIdInt)
+          .timeout(const Duration(seconds: 32), onTimeout: () {
+        throw TimeoutException('加载弹幕超时');
+      });
+      debugPrint('[ExtDanmaku] Repository 返回: count=${data['count']}, '
+          'fromCache=${data['fromCache']}, '
+          '耗时=${DateTime.now().difference(startedAt).inMilliseconds}ms');
+      final comments = data['comments'];
+      if (comments is List) {
+        raw = comments;
       }
     } catch (e, st) {
       debugPrint('[ExtDanmaku] 取弹幕失败: $e');

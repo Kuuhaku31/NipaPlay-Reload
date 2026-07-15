@@ -81,6 +81,8 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
 
   Future<void> _recognizeVideo(String videoPath) async {
     if (videoPath.isEmpty) return;
+    final targetVideoPath = _currentVideoPath;
+    bool canContinue() => !_isDisposed && _currentVideoPath == targetVideoPath;
 
     // 每次识别新视频时重置自动弹幕偏移
     _setAutoDanmakuOffset(0.0);
@@ -98,21 +100,18 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
 
       _setStatus(PlayerStatus.recognizing, message: '正在识别视频...');
 
-      // 使用超时处理网络请求
       try {
-        //debugPrint('尝试获取视频信息...');
         final videoInfo = await DandanplayService.getVideoInfo(videoPath)
             .timeout(const Duration(seconds: 15), onTimeout: () {
-          //debugPrint('获取视频信息超时');
           throw TimeoutException('连接服务器超时');
         });
+        if (!canContinue()) return;
 
         if (videoInfo['isMatched'] == true) {
-          //debugPrint('视频匹配成功，开始加载弹幕...');
           _setStatus(PlayerStatus.recognizing, message: '视频识别成功，正在加载弹幕...');
 
-          // 更新观看记录的动画和集数信息
           await _updateWatchHistoryWithVideoInfo(videoPath, videoInfo);
+          if (!canContinue()) return;
 
           if (videoInfo['matches'] != null && videoInfo['matches'].isNotEmpty) {
             final match = videoInfo['matches'][0];
@@ -125,124 +124,16 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
                 autoOffset = double.tryParse(shiftValue) ?? 0.0;
               }
               _setAutoDanmakuOffset(autoOffset);
-              try {
-                //debugPrint('尝试加载弹幕...');
-                _setStatus(PlayerStatus.recognizing, message: '正在加载弹幕...');
-                final episodeId = match['episodeId'].toString();
-                final animeId = match['animeId'] as int;
-
-                // 保存当前匹配到的弹幕ID，供后续流程/发送弹幕使用
-                _episodeId = int.tryParse(episodeId);
-                _animeId = animeId;
-
-                // 从缓存加载弹幕
-                //debugPrint('检查弹幕缓存...');
-                final cachedDanmakuRaw =
-                    await DanmakuCacheManager.getDanmakuFromCache(episodeId);
-                if (cachedDanmakuRaw != null) {
-                  //debugPrint('从缓存加载弹幕...');
-                  _setStatus(PlayerStatus.recognizing, message: '正在从缓存解析弹幕...');
-
-                  // 设置最终加载阶段标志，减少动画性能消耗
-                  _isInFinalLoadingPhase = true;
-                  _notifyListeners();
-
-                  _danmakuList = await DanmakuParser.parseDanmakuListOptimized(
-                    cachedDanmakuRaw as List<dynamic>?,
-                    (data) => compute(parseDanmakuListInBackground, data),
-                  );
-                  _danmakuListVersion++;
-
-                  // Sort the list immediately after parsing
-                  _danmakuList.sort((a, b) {
-                    final timeA = (a['time'] as double?) ?? 0.0;
-                    final timeB = (b['time'] as double?) ?? 0.0;
-                    return timeA.compareTo(timeB);
-                  });
-                  //debugPrint('缓存弹幕解析并排序完成');
-
-                  // 同步到多轨道弹幕结构，避免后续合并（如时间轴轨道）覆盖弹幕列表
-                  _danmakuTracks['dandanplay'] = {
-                    'name': '弹弹play',
-                    'source': 'dandanplay',
-                    'episodeId': episodeId,
-                    'animeId': animeId.toString(),
-                    'danmakuList': _danmakuList,
-                    'count': _danmakuList.length,
-                  };
-                  _danmakuTrackEnabled['dandanplay'] = true;
-
-                  _notifyListeners();
-                  _setStatus(PlayerStatus.recognizing,
-                      message: '从缓存加载弹幕完成 (${_danmakuList.length}条)');
-                  return; // Return early after loading from cache
-                }
-
-                //debugPrint('从网络加载弹幕...');
-                // 从网络加载弹幕
-                final danmakuData =
-                    await DandanplayService.getDanmaku(episodeId, animeId)
-                        .timeout(const Duration(seconds: 32), onTimeout: () {
-                  //debugPrint('加载弹幕超时');
-                  throw TimeoutException('加载弹幕超时');
-                });
-
-                // 设置最终加载阶段标志，减少动画性能消耗
-                _isInFinalLoadingPhase = true;
-                _notifyListeners();
-
-                _setStatus(PlayerStatus.recognizing, message: '正在解析网络弹幕...');
-                if (danmakuData['comments'] != null &&
-                    danmakuData['comments'] is List) {
-                  // Use compute for parsing network danmaku, using the imported function
-                  _danmakuList = await DanmakuParser.parseDanmakuListOptimized(
-                    danmakuData['comments'] as List<dynamic>?,
-                    (data) => compute(parseDanmakuListInBackground, data),
-                  );
-                  _danmakuListVersion++;
-
-                  // Sort the list immediately after parsing
-                  _danmakuList.sort((a, b) {
-                    final timeA = (a['time'] as double?) ?? 0.0;
-                    final timeB = (b['time'] as double?) ?? 0.0;
-                    return timeA.compareTo(timeB);
-                  });
-                  //debugPrint('网络弹幕解析并排序完成');
-
-                  // 同步到多轨道弹幕结构，避免后续合并（如时间轴轨道）覆盖弹幕列表
-                  _danmakuTracks['dandanplay'] = {
-                    'name': '弹弹play',
-                    'source': 'dandanplay',
-                    'episodeId': episodeId,
-                    'animeId': animeId.toString(),
-                    'danmakuList': _danmakuList,
-                    'count': _danmakuList.length,
-                  };
-                  _danmakuTrackEnabled['dandanplay'] = true;
-                } else {
-                  _danmakuList = [];
-                  _danmakuListVersion++;
-                  _danmakuTracks.clear();
-                  _danmakuTrackEnabled.clear();
-                }
-
-                _notifyListeners();
-                _setStatus(PlayerStatus.recognizing,
-                    message: '弹幕加载完成 (${_danmakuList.length}条)');
-
-                // 如果是GPU模式，预构建字符集
-                await _prebuildGPUDanmakuCharsetIfNeeded();
-              } catch (e) {
-                //debugPrint('弹幕加载/解析错误: $e\n$s');
-                _danmakuList = [];
-                _danmakuListVersion++;
-                _danmakuTracks.clear();
-                _danmakuTrackEnabled.clear();
-                _setStatus(PlayerStatus.recognizing, message: '弹幕加载失败，跳过');
-              }
+              final episodeId = match['episodeId'].toString();
+              final animeId = match['animeId'] is num
+                  ? (match['animeId'] as num).toInt()
+                  : int.tryParse(match['animeId'].toString()) ?? 0;
+              _episodeId = int.tryParse(episodeId);
+              _animeId = animeId;
+              if (!canContinue()) return;
+              await loadDanmaku(episodeId, animeId.toString());
             }
           } else {
-            //debugPrint('视频未匹配到信息');
             _danmakuList = [];
             _danmakuListVersion++;
             _danmakuTracks.clear();
@@ -259,7 +150,7 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
           }
         }
       } catch (e) {
-        //debugPrint('视频识别网络错误: $e\n$s');
+        if (!canContinue()) return;
         _danmakuList = [];
         _danmakuListVersion++;
         _danmakuTracks.clear();
@@ -267,7 +158,6 @@ extension VideoPlayerStateMetadata on VideoPlayerState {
         _setStatus(PlayerStatus.recognizing, message: '无法连接服务器，跳过加载弹幕');
       }
     } catch (e) {
-      //debugPrint('识别视频或加载弹幕时发生严重错误: $e\n$s');
       rethrow;
     }
   }

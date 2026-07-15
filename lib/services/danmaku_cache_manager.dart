@@ -4,6 +4,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:nipaplay/models/danmaku/danmaku_batch.dart';
+import 'package:nipaplay/services/danmaku_normalizer.dart';
+import 'package:nipaplay/services/danmaku_repository.dart';
 import 'package:nipaplay/utils/storage_service.dart';
 
 class DanmakuCacheManager {
@@ -102,7 +105,9 @@ class DanmakuCacheManager {
       }
 
       //////debugPrint('找到文件缓存');
-      final jsonData = json.decode(await file.readAsString());
+      final jsonData = Map<String, dynamic>.from(
+        json.decode(await file.readAsString()) as Map,
+      );
       final timestamp = jsonData['timestamp'] as int;
       final animeId = jsonData['animeId'] as int;
       final cacheTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
@@ -151,6 +156,59 @@ class DanmakuCacheManager {
     }
   }
 
+  static Future<void> saveBatch(
+    DanmakuBatch batch, {
+    String cacheVariant = '',
+  }) async {
+    if (kIsWeb) return;
+    final legacyComments = DanmakuMapAdapter.toLegacyList(batch.items);
+    final jsonData = <String, dynamic>{
+      ...batch.toJson(),
+      'cacheVariant': cacheVariant,
+      'comments': legacyComments,
+    };
+    _memoryCache[batch.episodeId] = jsonData;
+    final file = io.File(await _getCacheFilePath(batch.episodeId));
+    await file.writeAsString(json.encode(jsonData));
+  }
+
+  static Future<DanmakuBatch?> getBatch(DanmakuRequest request) async {
+    final comments = await getDanmakuFromCache(request.episodeId);
+    if (comments == null) return null;
+    final cacheData = _memoryCache[request.episodeId];
+    if (cacheData != null &&
+        cacheData['schemaVersion'] == 2 &&
+        cacheData['cacheVariant'] != request.cacheVariant) {
+      return null;
+    }
+    if (cacheData != null &&
+        cacheData['schemaVersion'] == 2 &&
+        cacheData['items'] is Iterable) {
+      return DanmakuBatch.fromJson(<String, dynamic>{
+        ...cacheData,
+        'source': cacheData['source'] ?? request.sourceId,
+        'episodeId': cacheData['episodeId'] ?? request.episodeId,
+      });
+    }
+
+    final timestamp = cacheData?['timestamp'];
+    final timestampMs = timestamp is num
+        ? timestamp.toInt()
+        : DateTime.now().millisecondsSinceEpoch;
+    final items = DanmakuMapAdapter.fromLegacyList(comments).map((item) {
+      return item.source == null
+          ? item.copyWith(source: request.sourceId)
+          : item;
+    });
+    return DanmakuBatch(
+      sourceId: request.sourceId,
+      episodeId: request.episodeId,
+      animeId: request.animeId,
+      fetchedAt: DateTime.fromMillisecondsSinceEpoch(timestampMs),
+      items: items,
+    );
+  }
+
   static Future<List<dynamic>?> getDanmakuFromCache(String episodeId) async {
     if (kIsWeb) return null;
     try {
@@ -187,13 +245,16 @@ class DanmakuCacheManager {
 
       //////debugPrint('从文件缓存获取弹幕');
       final file = io.File(await _getCacheFilePath(episodeId));
-      final jsonData = json.decode(await file.readAsString());
+      final jsonData = Map<String, dynamic>.from(
+        json.decode(await file.readAsString()) as Map,
+      );
       final comments = jsonData['comments'] as List<dynamic>;
       // 去除重复弹幕
       final uniqueComments = _removeDuplicateDanmaku(comments);
 
       // 更新内存缓存，确保后续读取一致
       final updatedCacheData = {
+        ...jsonData,
         'timestamp': jsonData['timestamp'],
         'animeId': jsonData['animeId'],
         'comments': uniqueComments,
@@ -303,5 +364,22 @@ class DanmakuCacheManager {
     } catch (e) {
       //////debugPrint('清理弹幕缓存失败: $e');
     }
+  }
+}
+
+class DanmakuCacheManagerStore implements DanmakuCacheStore {
+  const DanmakuCacheManagerStore();
+
+  @override
+  Future<DanmakuBatch?> read(DanmakuRequest request) {
+    return DanmakuCacheManager.getBatch(request);
+  }
+
+  @override
+  Future<void> write(DanmakuRequest request, DanmakuBatch batch) {
+    return DanmakuCacheManager.saveBatch(
+      batch,
+      cacheVariant: request.cacheVariant,
+    );
   }
 }

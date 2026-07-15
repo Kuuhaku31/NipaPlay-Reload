@@ -53,18 +53,11 @@ class DandanplayDanmakuNormalizer {
     if (comments is! Iterable) return const [];
 
     final items = <DanmakuItem>[];
-    final seen = <String>{};
     for (final raw in comments) {
       if (raw is! Map) continue;
       final item = normalizeComment(raw);
       if (item == null) continue;
-      final displayIdentity = <Object>[
-        item.time.inMicroseconds,
-        item.content,
-        item.mode.typeName,
-        item.colorRgb,
-      ].join('\u0000');
-      if (seen.add(displayIdentity)) items.add(item);
+      items.add(item);
     }
     return List<DanmakuItem>.unmodifiable(items);
   }

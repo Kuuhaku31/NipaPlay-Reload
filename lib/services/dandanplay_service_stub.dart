@@ -6,13 +6,24 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
+import 'package:nipaplay/models/danmaku/danmaku_batch.dart';
 import 'package:nipaplay/utils/network_settings.dart';
 import 'package:nipaplay/utils/media_filename_parser.dart';
 import 'package:nipaplay/services/file_picker_service.dart';
 import 'package:nipaplay/services/web_remote_access_service.dart';
 import 'package:nipaplay/services/danmaku_normalizer.dart';
+import 'package:nipaplay/services/danmaku_repository.dart';
 
 class DandanplayService {
+  static final DanmakuRepository _danmakuRepository = DanmakuRepository(
+    fetchRemote: (request) => _getDanmakuFromNetwork(
+      request.episodeId,
+      request.animeId,
+    ),
+    normalize: DandanplayDanmakuNormalizer.normalizeResponse,
+    cacheStore: MemoryDanmakuCacheStore(),
+  );
+
   static const String appId = "nipaplayv1";
   static const String userAgent = "NipaPlay/1.0";
   static const String _linkedBangumiAccountKey =
@@ -1168,6 +1179,23 @@ class DandanplayService {
 
   static Future<Map<String, dynamic>> getDanmaku(
       String episodeId, int animeId) async {
+    final chConvert = await _getDanmakuChConvertFlag();
+    final result = await _danmakuRepository.load(DanmakuRequest(
+      sourceId: DandanplayDanmakuNormalizer.sourceId,
+      episodeId: episodeId,
+      animeId: animeId,
+      cacheVariant: 'chConvert=$chConvert',
+    ));
+    final comments = DanmakuMapAdapter.toLegacyList(result.batch.items);
+    return <String, dynamic>{
+      'comments': comments,
+      'fromCache': result.isFromCache,
+      'count': comments.length,
+    };
+  }
+
+  static Future<Map<String, dynamic>> _getDanmakuFromNetwork(
+      String episodeId, int animeId) async {
     final webApiBaseUrl = await _getWebApiBaseUrl();
     if (webApiBaseUrl != null) {
       try {
@@ -1181,11 +1209,11 @@ class DandanplayService {
             response.body,
           );
         } else {
-          return {'comments': [], 'count': 0};
+          throw Exception('获取弹幕失败: HTTP ${response.statusCode}');
         }
       } catch (e) {
         debugPrint('[弹弹play服务-Web] 获取弹幕失败: $e');
-        return {'comments': [], 'count': 0};
+        rethrow;
       }
     }
 
@@ -1214,10 +1242,10 @@ class DandanplayService {
       if (response.statusCode == 200) {
         return _parseDanmakuBody(response.body, episodeId, animeId);
       }
-      return {'comments': [], 'count': 0};
+      throw Exception('获取弹幕失败: HTTP ${response.statusCode}');
     } catch (e) {
       debugPrint('[弹弹play服务] 获取弹幕失败: $e');
-      return {'comments': [], 'count': 0};
+      rethrow;
     }
   }
 
@@ -2016,20 +2044,6 @@ class DandanplayService {
     if (fileHash.isNotEmpty) {
       final cachedInfo = await getCachedVideoInfo(fileHash);
       if (cachedInfo != null) {
-        if (cachedInfo['matches'] != null && cachedInfo['matches'].isNotEmpty) {
-          final match = cachedInfo['matches'][0];
-          if (match['episodeId'] != null && match['animeId'] != null) {
-            try {
-              final episodeId = match['episodeId'].toString();
-              final animeId = match['animeId'] as int;
-              final danmakuData = await getDanmaku(episodeId, animeId);
-              cachedInfo['comments'] = danmakuData['comments'];
-            } catch (e) {
-              debugPrint('从缓存匹配信息获取弹幕失败: $e');
-            }
-          }
-        }
-
         _ensureVideoInfoTitles(cachedInfo);
         return cachedInfo;
       }
@@ -2078,20 +2092,6 @@ class DandanplayService {
             await saveVideoInfoToCache(fileHash, data);
           }
 
-          if (data['matches'] != null && data['matches'].isNotEmpty) {
-            final match = data['matches'][0];
-            if (match['episodeId'] != null && match['animeId'] != null) {
-              try {
-                final episodeId = match['episodeId'].toString();
-                final animeId = match['animeId'] as int;
-                final danmakuData = await getDanmaku(episodeId, animeId);
-                data['comments'] = danmakuData['comments'];
-              } catch (e) {
-                debugPrint('获取弹幕失败: $e');
-              }
-            }
-          }
-
           return data;
         }
       }
@@ -2114,24 +2114,6 @@ class DandanplayService {
           _ensureVideoInfoTitles(fallback);
           if (fileHash.isNotEmpty) {
             await saveVideoInfoToCache(fileHash, fallback);
-          }
-
-          if (fallback['matches'] != null &&
-              fallback['matches'] is List &&
-              fallback['matches'].isNotEmpty) {
-            final match = fallback['matches'][0];
-            if (match is Map &&
-                match['episodeId'] != null &&
-                match['animeId'] != null) {
-              try {
-                final episodeId = match['episodeId'].toString();
-                final animeId = match['animeId'] as int;
-                final danmakuData = await getDanmaku(episodeId, animeId);
-                fallback['comments'] = danmakuData['comments'];
-              } catch (e) {
-                debugPrint('fallback 获取弹幕失败: $e');
-              }
-            }
           }
 
           return fallback;

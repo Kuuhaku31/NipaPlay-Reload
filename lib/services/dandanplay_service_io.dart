@@ -8,8 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/utils/network_settings.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
+import 'package:nipaplay/models/danmaku/danmaku_batch.dart';
 import 'danmaku_cache_manager.dart';
 import 'danmaku_normalizer.dart';
+import 'danmaku_repository.dart';
 import 'debug_log_service.dart';
 import 'android_saf_service.dart';
 import 'package:nipaplay/utils/remote_media_fetcher.dart';
@@ -17,6 +19,15 @@ import 'package:nipaplay/utils/media_filename_parser.dart';
 import 'package:nipaplay/services/web_remote_access_service.dart';
 
 class DandanplayService {
+  static final DanmakuRepository _danmakuRepository = DanmakuRepository(
+    fetchRemote: (request) => _getDanmakuFromNetwork(
+      request.episodeId,
+      request.animeId,
+    ),
+    normalize: DandanplayDanmakuNormalizer.normalizeResponse,
+    cacheStore: const DanmakuCacheManagerStore(),
+  );
+
   static const String appId = "nipaplayv1";
   static const String userAgent = "NipaPlay/1.0";
   static const String _linkedBangumiAccountKey =
@@ -1157,20 +1168,6 @@ class DandanplayService {
     // 尝试从缓存获取视频信息
     final cachedInfo = await getCachedVideoInfo(fileHash);
     if (cachedInfo != null) {
-      if (cachedInfo['matches'] != null && cachedInfo['matches'].isNotEmpty) {
-        final match = cachedInfo['matches'][0];
-        if (match['episodeId'] != null && match['animeId'] != null) {
-          try {
-            final episodeId = match['episodeId'].toString();
-            final animeId = match['animeId'] as int;
-            final danmakuData = await getDanmaku(episodeId, animeId);
-            cachedInfo['comments'] = danmakuData['comments'];
-          } catch (e) {
-            debugPrint('从缓存匹配信息获取弹幕失败: $e');
-          }
-        }
-      }
-
       _ensureVideoInfoTitles(cachedInfo);
       return cachedInfo;
     }
@@ -1222,20 +1219,6 @@ class DandanplayService {
 
         await saveVideoInfoToCache(fileHash, data);
 
-        if (data['matches'] != null && data['matches'].isNotEmpty) {
-          final match = data['matches'][0];
-          if (match['episodeId'] != null && match['animeId'] != null) {
-            try {
-              final episodeId = match['episodeId'].toString();
-              final animeId = match['animeId'] as int;
-              final danmakuData = await getDanmaku(episodeId, animeId);
-              data['comments'] = danmakuData['comments'];
-            } catch (e) {
-              debugPrint('获取弹幕失败: $e');
-            }
-          }
-        }
-
         return data;
       } else {
         final bool autoMatchEnabled = prefs.getBool(
@@ -1253,24 +1236,6 @@ class DandanplayService {
             if (fallback != null && fallback['isMatched'] == true) {
               _ensureVideoInfoTitles(fallback);
               await saveVideoInfoToCache(fileHash, fallback);
-
-              if (fallback['matches'] != null &&
-                  fallback['matches'] is List &&
-                  fallback['matches'].isNotEmpty) {
-                final match = fallback['matches'][0];
-                if (match is Map &&
-                    match['episodeId'] != null &&
-                    match['animeId'] != null) {
-                  try {
-                    final episodeId = match['episodeId'].toString();
-                    final animeId = match['animeId'] as int;
-                    final danmakuData = await getDanmaku(episodeId, animeId);
-                    fallback['comments'] = danmakuData['comments'];
-                  } catch (e) {
-                    debugPrint('fallback 获取弹幕失败: $e');
-                  }
-                }
-              }
 
               return fallback;
             }
@@ -1510,23 +1475,27 @@ class DandanplayService {
     String episodeId,
     int animeId,
   ) async {
+    final chConvert = await _getDanmakuChConvertFlag();
+    final result = await _danmakuRepository.load(DanmakuRequest(
+      sourceId: DandanplayDanmakuNormalizer.sourceId,
+      episodeId: episodeId,
+      animeId: animeId,
+      cacheVariant: 'chConvert=$chConvert',
+    ));
+    final comments = DanmakuMapAdapter.toLegacyList(result.batch.items);
+    return <String, dynamic>{
+      'comments': comments,
+      'fromCache': result.isFromCache,
+      'count': comments.length,
+    };
+  }
+
+  static Future<Map<String, dynamic>> _getDanmakuFromNetwork(
+    String episodeId,
+    int animeId,
+  ) async {
     try {
       debugPrint('开始获取弹幕: episodeId=$episodeId, animeId=$animeId');
-
-      // 先检查缓存
-      final cachedDanmaku = await DanmakuCacheManager.getDanmakuFromCache(
-        episodeId,
-      );
-      if (cachedDanmaku != null) {
-        ////debugPrint('从缓存加载弹幕成功: $episodeId, 数量: ${cachedDanmaku.length}');
-        return {
-          'comments': cachedDanmaku,
-          'fromCache': true,
-          'count': cachedDanmaku.length,
-        };
-      }
-
-      ////debugPrint('缓存未命中，从网络加载弹幕');
 
       // 获取当前配置的服务器
       final currentServer = await getApiBaseUrl();
@@ -1565,8 +1534,6 @@ class DandanplayService {
       }
       // should not reach here — round 2 always throws
       throw Exception('获取弹幕失败');
-      // should not reach here — round 2 always throws
-      throw Exception('获取弹幕失败');
     } catch (e) {
       ////debugPrint('获取弹幕时出错: $e');
       rethrow;
@@ -1598,7 +1565,7 @@ class DandanplayService {
             .timeout(_danmakuRequestTimeout);
       } catch (e, st) {
         final shouldRetry = _shouldRetryDanmakuRequest(e) &&
-            attempt < _danmakuRequestMaxAttempts;
+            attempt < maxAttempts;
         if (!shouldRetry) {
           Error.throwWithStackTrace(e, st);
         }
@@ -1707,11 +1674,6 @@ class DandanplayService {
     final comments = result['comments'] as List<dynamic>;
 
     debugPrint('从网络加载弹幕成功: $episodeId, 标准化后数量: ${comments.length}');
-    DanmakuCacheManager.saveDanmakuToCache(
-      episodeId,
-      animeId,
-      comments,
-    ).then((_) => debugPrint('弹幕已保存到缓存: $episodeId'));
     return result;
   }
 
