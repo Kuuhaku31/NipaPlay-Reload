@@ -118,6 +118,11 @@ Map<String, dynamic>? _buildBilibiliDanmakuComment({
     final b = colorCode & 0xFF;
     final color = 'rgb($r,$g,$b)';
 
+    // 可选字段: timestamp, senderId, cid
+    final timestamp = pParams.length > 4 ? int.tryParse(pParams[4]) : null;
+    final senderId = pParams.length > 6 ? pParams[6].trim() : '';
+    final danmakuId = pParams.length > 7 ? pParams[7].trim() : '';
+
     return {
       't': time,
       'c': textContent,
@@ -125,6 +130,11 @@ Map<String, dynamic>? _buildBilibiliDanmakuComment({
       'r': color,
       'fontSize': fontSize,
       'originalType': typeCode,
+
+      if (timestamp != null && timestamp > 0) 'timestamp': timestamp,
+      if (senderId.isNotEmpty && senderId != '0') 'senderId': senderId,
+      if (danmakuId.isNotEmpty && danmakuId != '0') 'cid': danmakuId,
+      'source': 'bilibili', // 标记来源, 便于后续处理
     };
   } catch (_) {
     return null;
