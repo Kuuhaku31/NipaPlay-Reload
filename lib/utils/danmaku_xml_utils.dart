@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:xml/xml.dart';
 import 'package:flutter/foundation.dart';
+import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/cpp_native/bindings/danmaku_parser.dart';
 
 String encodeDanmakuXmlText(String input) {
@@ -110,20 +111,7 @@ Map<String, dynamic>? _buildBilibiliDanmakuComment({
     final fontSize = int.tryParse(pParams[2]) ?? 25;
     final colorCode = int.tryParse(pParams[3]) ?? 16777215;
 
-    String danmakuType;
-    switch (typeCode) {
-      case 4:
-        danmakuType = 'bottom';
-        break;
-      case 5:
-        danmakuType = 'top';
-        break;
-      case 1:
-      case 6:
-      default:
-        danmakuType = 'scroll';
-        break;
-    }
+    final danmakuType = DanmakuMode.fromCode(typeCode).typeName;
 
     final r = (colorCode >> 16) & 0xFF;
     final g = (colorCode >> 8) & 0xFF;

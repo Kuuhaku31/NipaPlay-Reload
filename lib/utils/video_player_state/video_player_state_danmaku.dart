@@ -892,15 +892,13 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     }
 
     final typeText = typeValue?.toString().toLowerCase();
-    switch (typeText) {
-      case 'top':
-        return 5;
-      case 'bottom':
-        return 4;
-      case 'scroll':
-      case 'right':
-      default:
-        return 1;
+    switch (typeText)
+    {
+    case 'top'    : return DanmakuMode.top   .code;
+    case 'bottom' : return DanmakuMode.bottom.code;
+    case 'scroll' : return DanmakuMode.scroll.code;
+    case 'right'  : return DanmakuMode.scroll.code;
+    default       : return DanmakuMode.scroll.code;
     }
   }
 

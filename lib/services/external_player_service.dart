@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:nipaplay/app/app_page_ids.dart';
+import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/constants/media_extensions.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
 import 'package:nipaplay/models/external_player_session.dart';
@@ -689,13 +690,11 @@ class ExternalPlayerService {
     if (original is num) return original.toInt();
     final v = item['type'] ?? item['y'];
     if (v is num) return v.toInt();
-    switch (v?.toString().toLowerCase()) {
-      case 'top':
-        return 5;
-      case 'bottom':
-        return 4;
-      default:
-        return 1;
+    switch (v?.toString().toLowerCase())
+    {
+    case 'top'    : return DanmakuMode.top.code;
+    case 'bottom' : return DanmakuMode.bottom.code;
+    default       : return DanmakuMode.scroll.code;
     }
   }
 

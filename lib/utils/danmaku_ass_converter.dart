@@ -1,3 +1,4 @@
+import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/utils/danmaku_xml_utils.dart';
 
 /// ASS 字幕导出用的描边样式。
@@ -215,27 +216,21 @@ String _resolveContent(Map<String, dynamic> item) {
 }
 
 _DanmakuKind _resolveKind(Map<String, dynamic> item) {
+
   final original = item['originalType'];
-  if (original is num) {
-    final code = original.toInt();
-    if (code == 5) return _DanmakuKind.top;
-    if (code == 4) return _DanmakuKind.bottom;
-    return _DanmakuKind.scroll;
-  }
+  if (original is num) return _kindFromMode(DanmakuMode.fromCode(original.toInt()));
+
   final v = item['type'] ?? item['y'];
-  if (v is num) {
-    final code = v.toInt();
-    if (code == 5) return _DanmakuKind.top;
-    if (code == 4) return _DanmakuKind.bottom;
-    return _DanmakuKind.scroll;
-  }
-  switch (v?.toString().toLowerCase()) {
-    case 'top':
-      return _DanmakuKind.top;
-    case 'bottom':
-      return _DanmakuKind.bottom;
-    default:
-      return _DanmakuKind.scroll;
+  if (v is num) { return _kindFromMode(DanmakuMode.fromCode     (v .toInt()   )); }
+  else          { return _kindFromMode(DanmakuMode.fromTypeName (v?.toString())); }
+}
+
+_DanmakuKind _kindFromMode(DanmakuMode mode) {
+  switch (mode)
+  {
+  case DanmakuMode.top    : return _DanmakuKind.top   ;
+  case DanmakuMode.bottom : return _DanmakuKind.bottom;
+  default                 : return _DanmakuKind.scroll;
   }
 }
 
@@ -591,7 +586,7 @@ String convertDanmakuToAssFromPrepared(
       _writeDialogue(buffer,
           layer: 0, start: start, end: end, style: 'Danmaku', text: line);
     } else {
-      final isBottom = it.typeCode == 4;
+      final isBottom = DanmakuMode.fromCode(it.typeCode) == DanmakuMode.bottom;
       // 顶/底部居中：用 \an8 顶中对齐 + \pos(PlayResX/2, y)，让 libass 按自身
       // 字体度量居中，避免 DFM+ paint_width 与 libass 渲染宽度不一致导致长弹幕偏移。
       final line =

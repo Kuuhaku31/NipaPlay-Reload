@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nipaplay/constants/danmaku/mode.dart';
 import 'package:nipaplay/utils/network_settings.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
 import 'danmaku_cache_manager.dart';
@@ -1705,7 +1706,7 @@ class DandanplayService {
         // 解析 p 字段，格式为 "时间,模式,颜色,用户ID"
         final pParts = (comment['p'] as String).split(',');
         final time = double.tryParse(pParts[0]) ?? 0.0;
-        final mode = int.tryParse(pParts[1]) ?? 1;
+        final mode = DanmakuMode.fromCode(int.tryParse(pParts[1]));
         final color = int.tryParse(pParts[2]) ?? 16777215; // 默认白色
         final content = comment['m'] as String;
 
@@ -1718,11 +1719,7 @@ class DandanplayService {
         return {
           'time': time,
           'content': content,
-          'type': mode == 1
-              ? 'scroll'
-              : mode == 5
-                  ? 'top'
-                  : 'bottom',
+          'type': mode.typeName,
           'color': colorValue,
           'isMe': false,
         };
@@ -2633,11 +2630,7 @@ class DandanplayService {
           final formattedDanmaku = {
             'time': time,
             'content': comment,
-            'type': mode == 1
-                ? 'scroll'
-                : mode == 5
-                    ? 'top'
-                    : 'bottom',
+            'type': DanmakuMode.fromCode(mode).typeName,
             'color': colorValue,
             'isMe': true,
           };
