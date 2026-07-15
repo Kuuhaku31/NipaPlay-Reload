@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:nipaplay/models/external_player_danmaku_item.dart';
 import 'package:nipaplay/models/external_player_session.dart';
 
 
@@ -27,6 +28,22 @@ class ExternalPlayerConsoleService extends ChangeNotifier {
   ExternalPlayerSession? get session => _session;
   bool get hasActiveSession => _session != null;
   bool get supportsDanmakuOpacity => _session?.ipcPath != null && _session?.danmakuAssPath != null;
+
+  /// 获取当前播放位置正在显示的弹幕索引列表, 按照 startTime 升序排列
+  List<int> get activeDanmakuIndices {
+    final current = _session;
+    final position = current?.position;
+    if (current == null || position == null) return const [];
+    return current.activeDanmakuIndicesAt(position);
+  }
+
+  /// 获取当前播放位置正在显示的弹幕, 按照 startTime 升序排列
+  List<ExternalPlayerDanmakuItem> get activeDanmakuItems {
+    final current = _session;
+    final position = current?.position;
+    if (current == null || position == null) return const [];
+    return current.activeDanmakuAt(position);
+  }
 
 
   // --- 主要功能 --- //

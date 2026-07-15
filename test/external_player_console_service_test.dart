@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nipaplay/constants/media_extensions.dart';
+import 'package:nipaplay/models/external_player_danmaku_item.dart';
 import 'package:nipaplay/models/external_player_session.dart';
 import 'package:nipaplay/models/playable_item.dart';
 import 'package:nipaplay/services/external_player_console_service.dart';
@@ -16,6 +17,7 @@ ExternalPlayerSession _session(
   Duration position = Duration.zero,
   Duration duration = Duration.zero,
   bool isPaused = false,
+  List<ExternalPlayerDanmakuItem> danmakuItems = const [],
 }) {
   return _sessionFromProcessId(
     process.pid,
@@ -25,6 +27,7 @@ ExternalPlayerSession _session(
     position: position,
     duration: duration,
     isPaused: isPaused,
+    danmakuItems: danmakuItems,
   );
 }
 
@@ -36,6 +39,7 @@ ExternalPlayerSession _sessionFromProcessId(
   Duration position = Duration.zero,
   Duration duration = Duration.zero,
   bool isPaused = false,
+  List<ExternalPlayerDanmakuItem> danmakuItems = const [],
 }) {
   final mediaPath = '/video/$processId.mkv';
   final playableItem = PlayableItem(
@@ -52,6 +56,7 @@ ExternalPlayerSession _sessionFromProcessId(
     duration,
     danmakuAssPath,
     playableItem,
+    danmakuItems: danmakuItems,
   )..initialize(
       danmakuOpacity: danmakuOpacity,
       position: position,
@@ -105,6 +110,35 @@ void main() {
       );
 
       expect(session.fraction, isNull);
+    });
+
+    test('finds every danmaku active at an interval boundary', () {
+      final session = _sessionFromProcessId(
+        1,
+        danmakuItems: const [
+          ExternalPlayerDanmakuItem(
+            id: 'later',
+            content: 'later',
+            startTime: Duration(seconds: 3),
+            endTime: Duration(seconds: 8),
+            colorRgb: 0xFFFFFF,
+            type: ExternalPlayerDanmakuType.top,
+          ),
+          ExternalPlayerDanmakuItem(
+            id: 'first',
+            content: 'first',
+            startTime: Duration(seconds: 1),
+            endTime: Duration(seconds: 6),
+            colorRgb: 0xFF0000,
+            type: ExternalPlayerDanmakuType.scroll,
+          ),
+        ],
+      );
+
+      expect(session.danmakuItems.map((item) => item.id), ['first', 'later']);
+      expect(session.activeDanmakuIndicesAt(const Duration(seconds: 3)), [0, 1]);
+      expect(session.activeDanmakuIndicesAt(const Duration(seconds: 6)), [1]);
+      expect(session.activeDanmakuIndicesAt(const Duration(seconds: 8)), isEmpty);
     });
   });
 
@@ -313,6 +347,16 @@ void main() {
           ipcPath: socketPath,
           duration: const Duration(minutes: 20),
           position: const Duration(minutes: 2),
+          danmakuItems: const [
+            ExternalPlayerDanmakuItem(
+              id: 'seek-target',
+              content: 'seek target',
+              startTime: Duration(minutes: 12),
+              endTime: Duration(minutes: 13),
+              colorRgb: 0xFFFFFF,
+              type: ExternalPlayerDanmakuType.scroll,
+            ),
+          ],
         ));
 
         ExternalPlayerConsoleService.seekToFraction(0.625);
@@ -325,6 +369,7 @@ void main() {
         expect(commands, <List<dynamic>>[
           <dynamic>['seek', 750.0, 'absolute+exact'],
         ]);
+        expect(service.activeDanmakuItems.map((item) => item.id), ['seek-target']);
       });
 
       test('coalesces rapid danmaku opacity updates without truncating ASS', () async {
