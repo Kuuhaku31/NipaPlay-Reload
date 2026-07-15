@@ -510,9 +510,7 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     final mergedList = result.mergedItems
         .map((item) => item.toMap())
         .toList();
-    final filteredList = result.outputItems
-        .map((item) => item.toMap())
-        .toList();
+    final filteredList = _internalPlayerSink.deliver(result.outputItems);
 
     debugPrint("[updateMerged] 合并后的总弹幕: ${mergedList.length}");
     int mergedTopCount = 0, mergedBottomCount = 0, mergedScrollCount = 0;
@@ -566,11 +564,11 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     _notifyListeners(); // 确保通知UI更新
   }
 
-  List<Map<String, dynamic>> collectDanmakuForExport({
+  List<DanmakuItem> collectDanmakuForExport({
     bool includeDisabledTracks = false,
     bool includeTimeline = false,
   }) {
-    final List<Map<String, dynamic>> exportList = [];
+    final exportList = <DanmakuItem>[];
 
     for (final entry in _danmakuSources.entries) {
       final source = entry.value;
@@ -578,14 +576,10 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
       if (!includeDisabledTracks && !source.enabled) {
         continue;
       }
-      exportList.addAll(source.items.map((item) => item.toMap()));
+      exportList.addAll(source.items);
     }
 
-    exportList.sort((a, b) {
-      final timeA = _resolveDanmakuTimeValue(a['time'] ?? a['t']);
-      final timeB = _resolveDanmakuTimeValue(b['time'] ?? b['t']);
-      return timeA.compareTo(timeB);
-    });
+    exportList.sort((a, b) => a.time.compareTo(b.time));
 
     return exportList;
   }
@@ -596,9 +590,8 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
   /// 内置播放器当前状态。流程复用 缓存→网络→解析→插件过滤→屏蔽过滤→随机色，
   /// 返回与内置显示口径一致的过滤后列表。
   ///
-  /// 调用方需保证此时内置播放器未在并发加载弹幕（插件过滤用共享 pending 缓冲）。
   /// 若 [_context]/[_pluginService] 不可用，插件过滤会优雅跳过（屏蔽过滤仍生效）。
-  Future<List<Map<String, dynamic>>> buildFilteredDanmakuForExport({
+  Future<List<DanmakuItem>> buildFilteredDanmakuForExport({
     required String episodeId,
     required String animeId,
   }) async {
@@ -673,37 +666,36 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
       prepareForDisplay: (item) =>
           DanmakuItem.fromMap(_prepareDanmakuForDisplay(item.toMap())),
     );
-    final filtered = result.outputItems
-        .map((item) => item.toMap())
-        .toList();
+    final filtered = result.outputItems;
 
     debugPrint('[ExtDanmaku] 完成，返回 ${filtered.length} 条');
     return filtered;
   }
 
-  String buildDanmakuJsonExport(List<Map<String, dynamic>> danmakuList) {
+  String buildDanmakuJsonExport(List<DanmakuItem> danmakuList) {
     final payload = <String, dynamic>{
       'count': danmakuList.length,
-      'comments': danmakuList,
+      'comments': danmakuList.map((item) => item.toJson()).toList(),
     };
     return json.encode(payload);
   }
 
-  String buildDanmakuXmlExport(List<Map<String, dynamic>> danmakuList) {
+  String buildDanmakuXmlExport(List<DanmakuItem> danmakuList) {
     final buffer = StringBuffer();
     buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
     buffer.writeln('<i>');
 
     for (final item in danmakuList) {
-      final content = _resolveDanmakuContent(item);
+      final content = item.content;
       if (content.isEmpty) continue;
 
-      final timeValue = _resolveDanmakuTimeValue(item['time'] ?? item['t']);
-      final timeText = _formatDanmakuTime(timeValue);
-      final typeCode = _resolveDanmakuTypeCode(item);
-      final fontSize = _resolveDanmakuFontSize(item);
-      final colorCode = parseDanmakuColorToInt(item['color'] ?? item['r']);
-      final timestamp = _resolveDanmakuTimestamp(item);
+      final timeText = _formatDanmakuTime(item.timeSeconds);
+      final typeCode = item.mode.code;
+      final fontSize = item.fontSize?.round() ?? 25;
+      final colorCode = item.colorRgb;
+      final timestamp = item.sentAt?.millisecondsSinceEpoch == null
+          ? _resolveDanmakuTimestamp(item.extra)
+          : item.sentAt!.millisecondsSinceEpoch ~/ 1000;
       final escaped = encodeDanmakuXmlText(content);
 
       buffer.writeln(
@@ -1425,37 +1417,36 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     }
   }
 
-  // 将一条新弹幕添加到指定的轨道，如果轨道不存在则创建
-  void addDanmakuToNewTrack(Map<String, dynamic> danmaku,
-      {String trackName = '我的弹幕'}) {
-    if (danmaku.containsKey('time') && danmaku.containsKey('content')) {
-      final trackId = 'local_$trackName';
+  void addDanmakuItemToNewSource(
+    DanmakuItem danmaku, {
+    String sourceName = '我的弹幕',
+  }) {
+    final trackId = 'local_$sourceName';
 
-      // 检查轨道是否存在
-      if (!_danmakuSources.containsKey(trackId)) {
-        // 如果轨道不存在，创建新轨道
-        _danmakuSources[trackId] = DanmakuSource(
-          id: trackId,
-          name: trackName,
-          provider: 'local',
-          loadedAt: DateTime.now(),
-        );
-      }
-
-      // 添加弹幕到轨道
-      final source = _danmakuSources[trackId]!;
-      _danmakuSources[trackId] = source.copyWith(
-        items: [
-          ...source.items,
-          DanmakuItem.fromMap(danmaku).copyWith(source: trackId),
-        ],
+    // 检查轨道是否存在
+    if (!_danmakuSources.containsKey(trackId)) {
+      // 如果轨道不存在，创建新轨道
+      _danmakuSources[trackId] = DanmakuSource(
+        id: trackId,
+        name: sourceName,
+        provider: 'local',
+        loadedAt: DateTime.now(),
       );
-
-      // 重新计算合并后的弹幕列表
-      _updateMergedDanmakuList();
-
-      debugPrint('已将新弹幕添加到轨道 "$trackName": ${danmaku['content']}');
     }
+
+    // 添加弹幕到轨道
+    final source = _danmakuSources[trackId]!;
+    _danmakuSources[trackId] = source.copyWith(
+      items: [
+        ...source.items,
+        danmaku.copyWith(source: trackId),
+      ],
+    );
+
+    // 重新计算合并后的弹幕列表
+    _updateMergedDanmakuList();
+
+    debugPrint('已将新弹幕添加到轨道 "$sourceName": ${danmaku.content}');
   }
 
   // 确保视频信息中包含格式化后的动画标题和集数标题
@@ -1513,7 +1504,7 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
           episodeId: episodeId!,
           currentTime: position.inSeconds.toDouble(),
           onDanmakuSent: (danmaku) {
-            addDanmakuToNewTrack(danmaku);
+            addDanmakuItemToNewSource(DanmakuItem.fromMap(danmaku));
           },
           onDialogClosed: () {},
           wasPlaying: wasPlaying,

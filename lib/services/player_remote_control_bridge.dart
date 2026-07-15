@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:nipaplay/constants/danmaku/mode.dart';
+import 'package:nipaplay/models/danmaku/danmaku_item.dart';
 import 'package:nipaplay/models/jellyfin_transcode_settings.dart';
 import 'package:nipaplay/player_abstraction/player_factory.dart';
 import 'package:nipaplay/player_menu/player_menu_definition_builder.dart';
@@ -1272,25 +1274,26 @@ class PlayerRemoteControlBridge {
 
     final dynamic danmakuFromServer = result['danmaku'];
     if (danmakuFromServer is Map<String, dynamic>) {
-      state.addDanmakuToNewTrack(
-        Map<String, dynamic>.from(danmakuFromServer),
-        trackName: '遥控器',
+      state.addDanmakuItemToNewSource(
+        DanmakuItem.fromMap(danmakuFromServer),
+        sourceName: '遥控器',
       );
       return;
     }
 
-    final colorText = _rgbToText(color);
-    state.addDanmakuToNewTrack(
-      {
-        'time': time,
-        'mode': mode,
-        'color': colorText,
-        'content': comment,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-        'pool': 0,
-        'user': 'remote-controller',
-      },
-      trackName: '遥控器',
+    state.addDanmakuItemToNewSource(
+      DanmakuItem(
+        time: Duration(
+          microseconds: (time * Duration.microsecondsPerSecond).round(),
+        ),
+        content: comment,
+        mode: DanmakuMode.fromCode(mode),
+        colorRgb: color,
+        sentAt: DateTime.now(),
+        senderId: 'remote-controller',
+        pool: 0,
+      ),
+      sourceName: '遥控器',
     );
   }
 
@@ -1456,13 +1459,6 @@ class PlayerRemoteControlBridge {
     final g = _channelToByte(color.g);
     final b = _channelToByte(color.b);
     return ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
-  }
-
-  static String _rgbToText(int color) {
-    final r = (color >> 16) & 0xFF;
-    final g = (color >> 8) & 0xFF;
-    final b = color & 0xFF;
-    return 'rgb($r,$g,$b)';
   }
 
   static int _channelToByte(double channel) {

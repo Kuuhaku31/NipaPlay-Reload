@@ -57,6 +57,7 @@ import 'package:nipaplay/themes/nipaplay/widgets/blur_snackbar.dart';
 import 'package:nipaplay/themes/nipaplay/widgets/blur_dialog.dart';
 import 'package:nipaplay/plugins/plugin_service.dart';
 import 'package:nipaplay/services/danmaku_pipeline.dart';
+import 'package:nipaplay/services/danmaku_sink.dart';
 
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:nipaplay/utils/ios_container_path_fixer.dart';
@@ -360,6 +361,7 @@ class VideoPlayerState extends ChangeNotifier implements WindowListener {
   // 多轨道弹幕系统
   final Map<String, DanmakuSource> _danmakuSources = {};
   final DanmakuPipeline _danmakuPipeline = const DanmakuPipeline();
+  final InternalPlayerSink _internalPlayerSink = const InternalPlayerSink();
   final double _controlBarHeight = 20.0; // 固定高度
   final String _minimalProgressBarEnabledKey = 'minimal_progress_bar_enabled';
   bool _minimalProgressBarEnabled = false; // 默认关闭

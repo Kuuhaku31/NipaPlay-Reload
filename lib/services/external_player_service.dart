@@ -21,6 +21,7 @@ import 'package:nipaplay/models/playable_item.dart';
 import 'package:nipaplay/player_abstraction/player_factory.dart';
 import 'package:nipaplay/providers/settings_provider.dart';
 import 'package:nipaplay/services/external_player_console_service.dart';
+import 'package:nipaplay/services/danmaku_sink.dart';
 import 'package:nipaplay/services/security_bookmark_service.dart';
 import 'package:nipaplay/src/rust/api/dfm_plus.dart' as rust_dfm;
 import 'package:nipaplay/src/rust/rust_init.dart';
@@ -558,16 +559,18 @@ class ExternalPlayerService {
         '[ExtPlayer] _prepareDanmakuAss: episodeId=$episodeId, animeId=$animeId');
     try {
       final vps = Provider.of<VideoPlayerState>(context, listen: false);
-      final list = await vps.buildFilteredDanmakuForExport(
+      final items = await vps.buildFilteredDanmakuForExport(
         episodeId: episodeId,
         animeId: animeId,
       );
-      debugPrint('[ExtPlayer] 过滤后弹幕 ${list.length} 条');
-      if (list.isEmpty) {
+      debugPrint('[ExtPlayer] 过滤后弹幕 ${items.length} 条');
+      if (items.isEmpty) {
         debugPrint('[ExtPlayer] 弹幕为空, 跳过 ASS 生成');
         return null;
       }
       final assSettings = _buildAssSettings(vps);
+      final assSink = ExternalAssSink(assSettings);
+      final layoutInput = assSink.buildLayoutInput(items);
       debugPrint('[ExtPlayer] ASS 设置: fontSize=${assSettings.fontSize}, '
           'opacity=${assSettings.opacity}, displayArea=${assSettings.displayArea}, '
           'scrollDur=${assSettings.scrollDurationSeconds}, '
@@ -575,18 +578,22 @@ class ExternalPlayerService {
       // 优先用 DFM+ 内核布局层预算运动参数（碰撞/追赶规避）, 失败回退经典算法.
       DanmakuAssConversionResult conversion;
       String assPathLabel;
-      final dfmConversion = await _generateAssViaDfmLayout(list, assSettings, vps);
+      final dfmConversion = await _generateAssViaDfmLayout(
+        layoutInput,
+        assSettings,
+        vps,
+      );
       if (dfmConversion != null) {
         conversion = dfmConversion;
         assPathLabel = 'DFM+布局';
       } else {
-        conversion = convertDanmakuToAssWithEvents(list, assSettings);
+        conversion = assSink.deliver(items);
         assPathLabel = '经典算法';
       }
       final ass = conversion.ass;
       final consoleItems = _buildConsoleDanmakuItems(
         conversion.events,
-        list,
+        layoutInput,
         assSettings.timeOffsetSeconds,
       );
       debugPrint('[ExtPlayer] ASS 生成完成 ($assPathLabel): ${ass.length} 字符');
