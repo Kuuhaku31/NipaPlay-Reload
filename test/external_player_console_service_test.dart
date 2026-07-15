@@ -195,34 +195,36 @@ void main() {
       });
 
       testWidgets('shows each danmaku source in the list', (tester) async {
-        final process = await _startPlayer();
-        addTearDown(() async {
+        final process = await tester.runAsync(_startPlayer);
+        if (process == null) fail('Failed to start the test player process');
+        try {
+          ExternalPlayerConsoleService.showSession(_session(
+            process,
+            danmakuItems: const [
+              ExternalPlayerDanmakuItem(
+                id: 'source-visible',
+                content: 'source test',
+                startTime: Duration(seconds: 1),
+                endTime: Duration(seconds: 6),
+                colorRgb: 0xFFFFFF,
+                type: ExternalPlayerDanmakuType.scroll,
+                source: 'bilibili',
+              ),
+            ],
+          ));
+
+          await tester.pumpWidget(const MaterialApp(
+            locale: Locale('zh'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: ExternalPlayerConsolePage(),
+          ));
+
+          expect(find.text('来源: bilibili'), findsOneWidget);
+        } finally {
           ExternalPlayerConsoleService.closePlayerAndConsole();
-          await _stopProcess(process);
-        });
-        ExternalPlayerConsoleService.showSession(_session(
-          process,
-          danmakuItems: const [
-            ExternalPlayerDanmakuItem(
-              id: 'source-visible',
-              content: 'source test',
-              startTime: Duration(seconds: 1),
-              endTime: Duration(seconds: 6),
-              colorRgb: 0xFFFFFF,
-              type: ExternalPlayerDanmakuType.scroll,
-              source: 'bilibili',
-            ),
-          ],
-        ));
-
-        await tester.pumpWidget(const MaterialApp(
-          locale: Locale('zh'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: ExternalPlayerConsolePage(),
-        ));
-
-        expect(find.text('来源: bilibili'), findsOneWidget);
+          Process.killPid(process.pid, ProcessSignal.sigkill);
+        }
       });
 
       test('reads playback progress through mpv JSON IPC', () async {
