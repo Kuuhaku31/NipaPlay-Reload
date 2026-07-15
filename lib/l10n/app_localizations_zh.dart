@@ -87,6 +87,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get externalPlayerConsoleDanmakuSender => '发送者';
 
   @override
+  String get externalPlayerConsoleDanmakuUnknownSource => '未知';
+
+  @override
+  String get externalPlayerConsoleDanmakuSource => '来源';
+
+  @override
   String get externalPlayerConsoleDanmakuTypeScroll => '滚动';
 
   @override
@@ -1931,6 +1937,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get externalPlayerConsoleDanmakuSender => '發送者';
+
+  @override
+  String get externalPlayerConsoleDanmakuUnknownSource => '未知';
+
+  @override
+  String get externalPlayerConsoleDanmakuSource => '來源';
 
   @override
   String get externalPlayerConsoleDanmakuTypeScroll => '滾動';

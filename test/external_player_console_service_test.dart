@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nipaplay/constants/media_extensions.dart';
+import 'package:nipaplay/l10n/app_localizations.dart';
 import 'package:nipaplay/models/external_player_danmaku_item.dart';
 import 'package:nipaplay/models/external_player_session.dart';
 import 'package:nipaplay/models/playable_item.dart';
+import 'package:nipaplay/pages/external_player_console_page.dart';
 import 'package:nipaplay/services/external_player_console_service.dart';
 
 ExternalPlayerSession _session(
@@ -189,6 +192,37 @@ void main() {
         ExternalPlayerConsoleService.showSession(_session(process));
 
         await _waitUntil(() => service.session == null);
+      });
+
+      testWidgets('shows each danmaku source in the list', (tester) async {
+        final process = await _startPlayer();
+        addTearDown(() async {
+          ExternalPlayerConsoleService.closePlayerAndConsole();
+          await _stopProcess(process);
+        });
+        ExternalPlayerConsoleService.showSession(_session(
+          process,
+          danmakuItems: const [
+            ExternalPlayerDanmakuItem(
+              id: 'source-visible',
+              content: 'source test',
+              startTime: Duration(seconds: 1),
+              endTime: Duration(seconds: 6),
+              colorRgb: 0xFFFFFF,
+              type: ExternalPlayerDanmakuType.scroll,
+              source: 'bilibili',
+            ),
+          ],
+        ));
+
+        await tester.pumpWidget(const MaterialApp(
+          locale: Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: ExternalPlayerConsolePage(),
+        ));
+
+        expect(find.text('来源: bilibili'), findsOneWidget);
       });
 
       test('reads playback progress through mpv JSON IPC', () async {

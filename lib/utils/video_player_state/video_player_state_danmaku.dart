@@ -767,6 +767,14 @@ extension VideoPlayerStateDanmaku on VideoPlayerState {
     } else {
       debugPrint('[ExtDanmaku] 插件未修改 (pluginService=${_pluginService != null})');
     }
+    parsed = parsed.map((item) {
+      final source = item['source']?.toString().trim();
+      if (source != null && source.isNotEmpty) return item;
+      return <String, dynamic>{
+        ...item,
+        'source': 'dandanplay',
+      };
+    }).toList();
 
     // 4. 屏蔽过滤 + 随机色（复用 _updateMergedDanmakuList 同款谓词）
     final beforeBlock = parsed.length;

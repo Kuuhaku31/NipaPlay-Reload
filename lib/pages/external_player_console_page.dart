@@ -459,7 +459,7 @@ class _DanmakuListState extends State<_DanmakuList> {
         else
           LayoutBuilder(
             builder: (context, constraints) {
-              final compact = constraints.maxWidth < 680;
+              final compact = constraints.maxWidth < 760;
               _itemExtent = compact ? 106 : 64;
               return Container(
                 height: 384,
@@ -512,6 +512,10 @@ class _DanmakuRow extends StatelessWidget {
     final localizations = context.l10n;
     final sender = item.senderId ??
         localizations.externalPlayerConsoleDanmakuUnknownSender;
+    final source = item.source ??
+        localizations.externalPlayerConsoleDanmakuUnknownSource;
+    final sourceText =
+        '${localizations.externalPlayerConsoleDanmakuSource}: $source';
     final type = switch (item.type) {
       ExternalPlayerDanmakuType.scroll =>
         localizations.externalPlayerConsoleDanmakuTypeScroll,
@@ -523,9 +527,6 @@ class _DanmakuRow extends StatelessWidget {
     final rgb = item.colorRgb & 0xFFFFFF;
     final colorText = '#${rgb.toRadixString(16).toUpperCase().padLeft(6, '0')}';
     final color = Color(0xFF000000 | rgb);
-    final senderTooltip = item.source == null
-        ? sender
-        : '$sender · ${item.source}';
 
     return Container(
       key: ValueKey('external-player-danmaku-${item.id}'),
@@ -579,9 +580,23 @@ class _DanmakuRow extends StatelessWidget {
                     const SizedBox(width: 14),
                     Expanded(
                       child: Tooltip(
-                        message: senderTooltip,
+                        message: sender,
                         child: Text(
                           '${localizations.externalPlayerConsoleDanmakuSender}: $sender',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Tooltip(
+                        message: sourceText,
+                        child: Text(
+                          sourceText,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
@@ -619,9 +634,24 @@ class _DanmakuRow extends StatelessWidget {
                 SizedBox(
                   width: 150,
                   child: Tooltip(
-                    message: senderTooltip,
+                    message: sender,
                     child: Text(
                       sender,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 150,
+                  child: Tooltip(
+                    message: sourceText,
+                    child: Text(
+                      sourceText,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(

@@ -249,6 +249,18 @@ abstract class AppLocalizations {
   /// **'发送者'**
   String get externalPlayerConsoleDanmakuSender;
 
+  /// No description provided for @externalPlayerConsoleDanmakuUnknownSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'未知'**
+  String get externalPlayerConsoleDanmakuUnknownSource;
+
+  /// No description provided for @externalPlayerConsoleDanmakuSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源'**
+  String get externalPlayerConsoleDanmakuSource;
+
   /// No description provided for @externalPlayerConsoleDanmakuTypeScroll.
   ///
   /// In zh, this message translates to:

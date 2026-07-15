@@ -31,6 +31,8 @@
   "externalPlayerConsoleDanmakuEmpty": "No danmaku was loaded for this playback session.",
   "externalPlayerConsoleDanmakuUnknownSender": "Unknown",
   "externalPlayerConsoleDanmakuSender": "Sender",
+  "externalPlayerConsoleDanmakuUnknownSource": "Unknown",
+  "externalPlayerConsoleDanmakuSource": "Source",
   "externalPlayerConsoleDanmakuTypeScroll": "Scroll",
   "externalPlayerConsoleDanmakuTypeTop": "Top",
   "externalPlayerConsoleDanmakuTypeBottom": "Bottom",
