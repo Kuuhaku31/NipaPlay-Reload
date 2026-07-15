@@ -194,7 +194,7 @@ void main() {
         await _waitUntil(() => service.session == null);
       });
 
-      testWidgets('shows each danmaku source in the list', (tester) async {
+      testWidgets('does not show danmaku sources in the list', (tester) async {
         final process = await tester.runAsync(_startPlayer);
         if (process == null) fail('Failed to start the test player process');
         try {
@@ -220,7 +220,7 @@ void main() {
             home: ExternalPlayerConsolePage(),
           ));
 
-          expect(find.text('来源: bilibili'), findsOneWidget);
+          expect(find.textContaining('bilibili'), findsNothing);
         } finally {
           ExternalPlayerConsoleService.closePlayerAndConsole();
           Process.killPid(process.pid, ProcessSignal.sigkill);

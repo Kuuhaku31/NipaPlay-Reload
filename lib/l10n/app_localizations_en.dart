@@ -90,12 +90,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get externalPlayerConsoleDanmakuSender => 'Sender';
 
   @override
-  String get externalPlayerConsoleDanmakuUnknownSource => 'Unknown';
-
-  @override
-  String get externalPlayerConsoleDanmakuSource => 'Source';
-
-  @override
   String get externalPlayerConsoleDanmakuTypeScroll => 'Scroll';
 
   @override

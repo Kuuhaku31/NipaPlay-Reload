@@ -25,8 +25,6 @@
   "externalPlayerConsoleDanmakuEmpty": "本次播放沒有載入彈幕。",
   "externalPlayerConsoleDanmakuUnknownSender": "未知",
   "externalPlayerConsoleDanmakuSender": "發送者",
-  "externalPlayerConsoleDanmakuUnknownSource": "未知",
-  "externalPlayerConsoleDanmakuSource": "來源",
   "externalPlayerConsoleDanmakuTypeScroll": "滾動",
   "externalPlayerConsoleDanmakuTypeTop": "頂部",
   "externalPlayerConsoleDanmakuTypeBottom": "底部",
