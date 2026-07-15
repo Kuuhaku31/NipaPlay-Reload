@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:nipaplay/app/app_page_ids.dart';
 import 'package:nipaplay/constants/media_extensions.dart';
 import 'package:nipaplay/constants/settings_keys.dart';
 import 'package:nipaplay/models/external_player_session.dart';
@@ -23,6 +24,7 @@ import 'package:nipaplay/utils/danmaku/assets.dart';
 import 'package:nipaplay/utils/danmaku/style.dart';
 import 'package:nipaplay/utils/danmaku_ass_converter.dart';
 import 'package:nipaplay/utils/danmaku_xml_utils.dart';
+import 'package:nipaplay/utils/tab_change_notifier.dart';
 import 'package:nipaplay/utils/video_player_state.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -397,7 +399,13 @@ class ExternalPlayerService {
           danmakuOpacity: danmakuAssets?.opacity ?? 1.0,
           position: Duration(milliseconds: history?.lastPosition ?? 0),
         );
+
       ExternalPlayerConsoleService.showSession(s);
+
+      // 如果设置了启动外部播放器后自动切换到弹幕控制台, 则切换页面
+      if (settings.externalPlayerAutoSwitchToDanmakuConsole && context.mounted) {
+        Provider.of<TabChangeNotifier>(context, listen: false).changePage(AppPageIds.externalPlayerConsole);
+      }
     }
 
     if (context.mounted) {
